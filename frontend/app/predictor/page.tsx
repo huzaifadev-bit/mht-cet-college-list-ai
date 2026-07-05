@@ -972,6 +972,30 @@ export default function PredictorPage() {
           .buckets-grid {
             grid-template-columns: 1fr;
           }
+          .bucket-list {
+            max-height: none;
+            overflow-y: visible;
+          }
+        }
+        
+        @media (max-width: 480px) {
+          .card-primary-row {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 12px;
+          }
+          .prediction-metrics {
+            align-items: flex-start;
+            width: 100%;
+            flex-direction: row;
+            justify-content: space-between;
+            border-top: 1px solid var(--panel-border);
+            padding-top: 12px;
+            margin-top: 4px;
+          }
+          .probability-display {
+            text-align: left;
+          }
         }
         
         .toggle-option-btn {
