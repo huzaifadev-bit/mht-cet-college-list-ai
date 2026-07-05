@@ -186,7 +186,7 @@ export default function LandingPage() {
       minority_status: minorityStatus === 'None' ? null : minorityStatus,
       preferred_branches: selectedBranches,
       preferred_districts: preferredDistricts,
-      max_fees: maxFees ? parseInt(maxFees) : null,
+      max_fees: null,
       gov_private_pref: govPrivatePref,
       autonomous_pref: autonomousPref,
       hostel_required: hostelRequired,
@@ -448,17 +448,7 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              <div className="form-row-3">
-                <div className="form-group">
-                  <label className="form-label">Max Annual Budget (INR)</label>
-                  <input 
-                    type="number" 
-                    className="form-input" 
-                    placeholder="e.g. 150000" 
-                    value={maxFees}
-                    onChange={(e) => setMaxFees(e.target.value)}
-                  />
-                </div>
+              <div className="form-row-2">
                 <div className="form-group">
                   <label className="form-label">College Status</label>
                   <select 
