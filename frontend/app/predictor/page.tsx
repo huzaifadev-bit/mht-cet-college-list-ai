@@ -79,16 +79,23 @@ export default function PredictorPage() {
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
 
   useEffect(() => {
-    const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
-    if (savedToken && savedUser) {
-      setToken(savedToken);
+    if (savedUser) {
       try {
         const u = JSON.parse(savedUser);
         if (u.profile_data) {
           setProfile(u.profile_data);
-          fetchPredictions(savedToken, u.profile_data);
-          fetchActivePreferences(savedToken);
+          fetchPredictions('', u.profile_data);
+          
+          // Load active preferences locally from localStorage
+          const localPrefs = localStorage.getItem('cap_preferences');
+          if (localPrefs) {
+            const parsed = JSON.parse(localPrefs);
+            setSavedItems(parsed.map((i: any) => ({
+              college_code: i.college.code,
+              branch_code: i.branch.code
+            })));
+          }
         } else {
           setError('Please configure your scores and preferences on the home page first.');
         }
@@ -96,27 +103,9 @@ export default function PredictorPage() {
         setError('Error reading student profile.');
       }
     } else {
-      setError('Please login to access the AI college predictor.');
+      setError('Please configure your scores and preferences on the home page first.');
     }
   }, []);
-
-  const fetchActivePreferences = async (authToken: string) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/preferences/active`, {
-        headers: { 'Authorization': `Bearer ${authToken}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const items = data.items || [];
-        setSavedItems(items.map((i: any) => ({
-          college_code: i.college.code,
-          branch_code: i.branch.code
-        })));
-      }
-    } catch (e) {
-      console.log('Error fetching active preferences:', e);
-    }
-  };
 
   const fetchPredictions = async (authToken: string, profData: any) => {
     setLoading(true);
@@ -170,59 +159,39 @@ export default function PredictorPage() {
   };
 
   const handleAddToPreferences = async (item: PredictionResult) => {
-    if (!token) return;
-    
-    // Check if already exists
+    // Check if already exists in local saved items
     const exists = savedItems.some(
       s => s.college_code === item.college.code && s.branch_code === item.branch.code
     );
     if (exists) return;
 
-    // Fetch existing preferences first
     try {
-      const activeRes = await fetch(`${API_BASE_URL}/api/preferences/active`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const activeData = await activeRes.json();
-      
-      const currentItems = activeData.items || [];
+      const localPrefs = localStorage.getItem('cap_preferences') || '[]';
+      const currentItems = JSON.parse(localPrefs);
       const newOrder = currentItems.length + 1;
       
-      const updatedItems = currentItems.map((i: any) => ({
-        college_code: i.college.code,
-        branch_code: i.branch.code,
-        preference_order: i.preference_order,
-        locked: i.locked
-      }));
-      
-      updatedItems.push({
-        college_code: item.college.code,
-        branch_code: item.branch.code,
+      const newPrefItem = {
+        id: `local_${Date.now()}_${item.college.code}_${item.branch.code}`,
+        college: item.college,
+        branch: item.branch,
         preference_order: newOrder,
-        locked: false
-      });
+        locked: false,
+        admission_probability: item.admission_probability
+      };
       
-      const saveRes = await fetch(`${API_BASE_URL}/api/preferences`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          name: activeData.name || 'My CAP Preference List',
-          items: updatedItems
-        })
-      });
+      currentItems.push(newPrefItem);
+      localStorage.setItem('cap_preferences', JSON.stringify(currentItems));
       
-      if (saveRes.ok) {
-        setSavedItems([...savedItems, { college_code: item.college.code, branch_code: item.branch.code }]);
-      } else {
-        alert('Failed to add college to preference list');
-      }
+      // Update local state
+      setSavedItems([...savedItems, { college_code: item.college.code, branch_code: item.branch.code }]);
+      alert(`Added ${item.college.name} (${item.branch.name}) to your preferences list!`);
     } catch (e) {
-      console.log('Error adding to preference list:', e);
+      console.log('Error adding preference:', e);
+      alert('Failed to add to preferences.');
     }
   };
+
+
 
   // Helper to extract unique districts and branches from loaded predictions
   const getFilterOptions = () => {
