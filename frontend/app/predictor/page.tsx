@@ -1,1024 +1,861 @@
-"use html";
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { API_BASE_URL } from '../config';
-import { 
-  Search, 
-  MapPin, 
-  DollarSign, 
-  TrendingUp, 
-  Plus, 
-  Compass, 
-  Globe, 
-  Map, 
-  Award,
-  AlertCircle,
-  HelpCircle,
-  FolderPlus,
-  BookmarkCheck
+import {
+  Compass, Search, ChevronDown, ChevronUp, Plus, BookmarkCheck,
+  MapPin, Award, TrendingUp, Shield, Star, Target, Zap,
+  Filter, X, BarChart2, Globe, ExternalLink
 } from 'lucide-react';
 
-interface College {
-  code: number;
-  name: string;
-  district: { name: string };
-  university: { name: string };
-  status: string;
-  autonomous: boolean;
-  minority_status: string | null;
-  fees: number | null;
-  hostel_availability: boolean;
-  average_package: number | null;
-  highest_package: number | null;
-  official_website: string | null;
-  maps_location: string | null;
-}
-
-interface Branch {
-  code: string;
-  name: string;
-}
-
-interface PredictionResult {
-  college: College;
-  branch: Branch;
+// ─── Types ───────────────────────────────────────────────────────────────────
+interface CollegeResult {
+  college: {
+    code: number;
+    name: string;
+    district: { name: string };
+    university: { name: string };
+    status: string;
+    autonomous: boolean;
+    minority_status: string | null;
+    fees: number | null;
+    hostel_availability: boolean;
+    average_package: number | null;
+    highest_package: number | null;
+    official_website: string | null;
+  };
+  branch: { code: string; name: string };
   cap_round: number;
   seat_type: string;
   admission_probability: number;
   category_closing_percentiles: Record<string, Array<{ round: number; percentile: number; rank: number }>>;
   current_vacant_seats: number;
-  previous_vacant_seats: number;
   explanation: string;
 }
 
+const CATEGORIES = ['OPEN', 'OBC', 'SC', 'ST', 'EWS', 'VJNT', 'NT1', 'NT2', 'NT3', 'SBC', 'TFWS', 'DEF'];
+
+const ALL_BRANCHES = [
+  'Computer Engineering',
+  'Information Technology',
+  'Computer Science and Engineering',
+  'Artificial Intelligence and Data Science',
+  'Computer Science and Engineering(Artificial Intelligence and Machine Learning)',
+  'Electronics and Telecommunication Engg',
+  'Mechanical Engineering',
+  'Electrical Engineering',
+  'Civil Engineering',
+  'Chemical Engineering',
+  'Instrumentation Engineering',
+  'Production Engineering',
+];
+
+const DISTRICTS = [
+  'Pune', 'Mumbai', 'Thane', 'Nagpur', 'Nashik', 'Amravati',
+  'Aurangabad', 'Kolhapur', 'Sangli', 'Solapur', 'Nanded',
+  'Jalgaon', 'Akola', 'Latur', 'Chandrapur', 'Yavatmal'
+];
+
+const BUCKETS = ['Safe', 'High Chance', 'Moderate Chance', 'Dream'] as const;
+
+const BUCKET_META: Record<string, { color: string; bg: string; label: string; icon: React.ReactNode; desc: string }> = {
+  'Safe':            { color: '#10b981', bg: 'rgba(16,185,129,0.12)', label: '90–100%', icon: <Shield size={16}/>, desc: 'Very likely admission based on past cutoffs' },
+  'High Chance':     { color: '#6366f1', bg: 'rgba(99,102,241,0.12)',  label: '70–90%',  icon: <TrendingUp size={16}/>, desc: 'Strong match — cutoff is within close range' },
+  'Moderate Chance': { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: '40–70%',  icon: <Target size={16}/>, desc: 'Competitive — depends on round & vacancies' },
+  'Dream':           { color: '#ef4444', bg: 'rgba(239,68,68,0.12)',   label: '<40%',   icon: <Star size={16}/>, desc: 'Aspirational — add to top of your preference list' },
+};
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 export default function PredictorPage() {
-  const [token, setToken] = useState<string | null>(null);
-  const [profile, setProfile] = useState<any>(null);
-  const [predictions, setPredictions] = useState<Record<string, PredictionResult[]>>({
-    "Safe": [],
-    "High Chance": [],
-    "Moderate Chance": [],
-    "Dream": []
-  });
-  
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  
-  // Active Saved Preferences to check which ones are already added
-  const [savedItems, setSavedItems] = useState<Array<{college_code: number, branch_code: string}>>([]);
-  
-  // Search & Filter State
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDistrict, setSelectedDistrict] = useState('ALL');
+  // Form state
+  const [percentile, setPercentile] = useState('');
+  const [category, setCategory]     = useState('OPEN');
+  const [gender, setGender]         = useState('M');
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState('PROBABILITY_DESC');
+  const [selectedDistricts, setSelectedDistricts] = useState<string[]>([]);
+  const [govPref, setGovPref]       = useState('ANY');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Expanded Accordion State for cutoff details
-  const [expandedIds, setExpandedIds] = useState<string[]>([]);
+  // Results state
+  const [results, setResults]       = useState<Record<string, CollegeResult[]> | null>(null);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState('');
+  const [hasSearched, setHasSearched] = useState(false);
 
-  useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      try {
-        const u = JSON.parse(savedUser);
-        if (u.profile_data) {
-          setProfile(u.profile_data);
-          fetchPredictions('', u.profile_data);
-          
-          // Load active preferences locally from localStorage
-          const localPrefs = localStorage.getItem('cap_preferences');
-          if (localPrefs) {
-            const parsed = JSON.parse(localPrefs);
-            setSavedItems(parsed.map((i: any) => ({
-              college_code: i.college.code,
-              branch_code: i.branch.code
-            })));
-          }
-        } else {
-          setError('Please configure your scores and preferences on the home page first.');
-        }
-      } catch (e) {
-        setError('Error reading student profile.');
-      }
-    } else {
-      setError('Please configure your scores and preferences on the home page first.');
-    }
-  }, []);
+  // Filter / sort on results
+  const [searchQ, setSearchQ]       = useState('');
+  const [filterDistrict, setFilterDistrict] = useState('ALL');
+  const [filterBranch, setFilterBranch]     = useState('ALL');
+  const [sortBy, setSortBy]         = useState('PROB_DESC');
 
-  const fetchPredictions = async (authToken: string, profData: any) => {
+  // Accordion
+  const [expanded, setExpanded]     = useState<Set<string>>(new Set());
+  // Saved preferences
+  const [saved, setSaved]           = useState<Set<string>>(new Set());
+  // Active bucket tab
+  const [activeBucket, setActiveBucket] = useState<string>('Safe');
+
+  // ─── Fetch Predictions ──────────────────────────────────────────────────
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!percentile) { setError('Please enter your percentile.'); return; }
+    const pct = parseFloat(percentile);
+    if (isNaN(pct) || pct < 0 || pct > 100) { setError('Percentile must be between 0 and 100.'); return; }
+
     setLoading(true);
     setError('');
+    setResults(null);
+    setHasSearched(true);
+
     try {
       const res = await fetch(`${API_BASE_URL}/api/predict`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ` },
         body: JSON.stringify({
-          percentile: profData.percentile,
-          rank: profData.rank,
-          category: profData.category,
-          gender: profData.gender,
-          home_university: profData.home_university,
-          candidature_type: profData.candidature_type || 'Type A',
-          tfws_status: profData.tfws_status || false,
-          defence_status: profData.defence_status || false,
-          ph_status: profData.ph_status || false,
-          minority_status: profData.minority_status,
-          preferred_branches: profData.preferred_branches || [],
-          preferred_districts: profData.preferred_districts || [],
-          max_fees: profData.max_fees || null,
-          gov_private_pref: profData.gov_private_pref || 'ANY',
-          autonomous_pref: profData.autonomous_pref || 'ANY',
-          hostel_required: profData.hostel_required || false,
-          placement_priority: profData.placement_priority || false
-        })
+          percentile: pct,
+          rank: null,
+          category,
+          gender,
+          home_university: '',
+          candidature_type: 'Type A',
+          tfws_status: category === 'TFWS',
+          defence_status: category === 'DEF',
+          ph_status: false,
+          minority_status: 'None',
+          preferred_branches: selectedBranches,
+          preferred_districts: selectedDistricts,
+          max_fees: null,
+          gov_private_pref: govPref,
+          autonomous_pref: 'ANY',
+          hostel_required: false,
+          placement_priority: false,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
-        setPredictions(data);
+        setResults(data);
+        // Auto-switch to first non-empty bucket
+        const firstFull = BUCKETS.find(b => (data[b] || []).length > 0);
+        if (firstFull) setActiveBucket(firstFull);
       } else {
-        throw new Error(data.detail || 'Prediction calculation failed');
+        throw new Error(data.detail || 'Failed to load predictions');
       }
     } catch (err: any) {
-      setError(err.message || 'Error occurred while loading recommendations.');
+      setError(err.message || 'Error fetching predictions. Make sure the backend is running.');
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleExpand = (id: string) => {
-    if (expandedIds.includes(id)) {
-      setExpandedIds(expandedIds.filter(x => x !== id));
-    } else {
-      setExpandedIds([...expandedIds, id]);
-    }
-  };
+  // ─── Helpers ────────────────────────────────────────────────────────────
+  const toggleBranch  = (b: string) => setSelectedBranches(prev => prev.includes(b) ? prev.filter(x => x !== b) : [...prev, b]);
+  const toggleDistrict = (d: string) => setSelectedDistricts(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
+  const toggleExpand  = (id: string) => setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
-  const handleAddToPreferences = async (item: PredictionResult) => {
-    // Check if already exists in local saved items
-    const exists = savedItems.some(
-      s => s.college_code === item.college.code && s.branch_code === item.branch.code
-    );
-    if (exists) return;
-
-    try {
-      const localPrefs = localStorage.getItem('cap_preferences') || '[]';
-      const currentItems = JSON.parse(localPrefs);
-      const newOrder = currentItems.length + 1;
-      
-      const newPrefItem = {
-        id: `local_${Date.now()}_${item.college.code}_${item.branch.code}`,
-        college: item.college,
-        branch: item.branch,
-        preference_order: newOrder,
-        locked: false,
-        admission_probability: item.admission_probability
-      };
-      
-      currentItems.push(newPrefItem);
-      localStorage.setItem('cap_preferences', JSON.stringify(currentItems));
-      
-      // Update local state
-      setSavedItems([...savedItems, { college_code: item.college.code, branch_code: item.branch.code }]);
-      alert(`Added ${item.college.name} (${item.branch.name}) to your preferences list!`);
-    } catch (e) {
-      console.log('Error adding preference:', e);
-      alert('Failed to add to preferences.');
-    }
-  };
-
-
-
-  // Helper to extract unique districts and branches from loaded predictions
-  const getFilterOptions = () => {
-    const districts = new Set<string>();
-    const branches = new Set<string>();
-    
-    Object.values(predictions).forEach((bucketList) => {
-      bucketList.forEach((pred) => {
-        districts.add(pred.college.district.name);
-        branches.add(pred.branch.name);
-      });
+  const addToPreferences = (item: CollegeResult) => {
+    const key = `${item.college.code}_${item.branch.code}`;
+    if (saved.has(key)) return;
+    const localPrefs: any[] = JSON.parse(localStorage.getItem('cap_preferences') || '[]');
+    localPrefs.push({
+      id: `local_${Date.now()}_${key}`,
+      college: item.college,
+      branch: item.branch,
+      preference_order: localPrefs.length + 1,
+      locked: false,
+      admission_probability: item.admission_probability,
     });
-    
-    return {
-      districts: Array.from(districts),
-      branches: Array.from(branches)
-    };
+    localStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
+    setSaved(prev => new Set([...prev, key]));
   };
 
-  const { districts, branches } = getFilterOptions();
-
-  // Filter and Sort function for a single bucket list
-  const processBucketList = (bucketList: PredictionResult[]) => {
-    let list = [...bucketList];
-    
-    // Search Query
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(
-        item => 
-          item.college.name.toLowerCase().includes(q) || 
-          item.college.code.toString().includes(q) || 
-          item.branch.name.toLowerCase().includes(q)
-      );
+  const processResults = (list: CollegeResult[]) => {
+    let out = [...list];
+    if (searchQ) {
+      const q = searchQ.toLowerCase();
+      out = out.filter(i => i.college.name.toLowerCase().includes(q) || i.branch.name.toLowerCase().includes(q) || i.college.code.toString().includes(q));
     }
-    
-    // District Filter
-    if (selectedDistrict !== 'ALL') {
-      list = list.filter(item => item.college.district.name === selectedDistrict);
-    }
-    
-    // Branch Filter
-    if (selectedBranches.length > 0) {
-      list = list.filter(item => selectedBranches.includes(item.branch.name));
-    }
-    
-    // Sort
-    list.sort((a, b) => {
-      if (sortBy === 'PROBABILITY_DESC') {
-        return b.admission_probability - a.admission_probability;
-      }
-      if (sortBy === 'FEES_ASC') {
-        const feesA = a.college.fees ?? 999999;
-        const feesB = b.college.fees ?? 999999;
-        return feesA - feesB;
-      }
-      if (sortBy === 'PLACEMENT_DESC') {
-        const pkgA = a.college.average_package ?? 0;
-        const pkgB = b.college.average_package ?? 0;
-        return pkgB - pkgA;
-      }
-      return 0;
-    });
-    
-    return list;
+    if (filterDistrict !== 'ALL') out = out.filter(i => i.college.district.name === filterDistrict);
+    if (filterBranch !== 'ALL')   out = out.filter(i => i.branch.name === filterBranch);
+    if (sortBy === 'PROB_DESC')   out.sort((a, b) => b.admission_probability - a.admission_probability);
+    if (sortBy === 'PROB_ASC')    out.sort((a, b) => a.admission_probability - b.admission_probability);
+    if (sortBy === 'FEES_ASC')    out.sort((a, b) => (a.college.fees ?? 999999) - (b.college.fees ?? 999999));
+    if (sortBy === 'CUTOFF_ASC')  out.sort((a, b) => a.admission_probability - b.admission_probability);
+    return out;
   };
 
-  const rendersBucketCard = (item: PredictionResult, statusBucket: string) => {
-    const id = `${item.college.code}_${item.branch.code}`;
-    const isExpanded = expandedIds.includes(id);
-    
-    const isAdded = savedItems.some(
-      s => s.college_code === item.college.code && s.branch_code === item.branch.code
-    );
+  const allResultDistricts = results ? [...new Set(Object.values(results).flat().map(i => i.college.district.name))].sort() : [];
+  const allResultBranches  = results ? [...new Set(Object.values(results).flat().map(i => i.branch.name))].sort() : [];
+  const totalResults       = results ? Object.values(results).flat().length : 0;
 
-    // Probability indicator color
-    let probColor = 'var(--success-color)';
-    if (statusBucket === 'High Chance') probColor = 'var(--accent-secondary)';
-    if (statusBucket === 'Moderate Chance') probColor = 'var(--warning-color)';
-    if (statusBucket === 'Dream') probColor = 'var(--error-color)';
+  // ─── Card ────────────────────────────────────────────────────────────────
+  const renderCard = (item: CollegeResult, bucket: string) => {
+    const id   = `${item.college.code}_${item.branch.code}`;
+    const meta = BUCKET_META[bucket];
+    const isSaved   = saved.has(id);
+    const isExpanded = expanded.has(id);
 
     return (
-      <div key={id} className="prediction-card glass-panel animate-fade-in">
-        <div className="card-primary-row">
-          <div className="college-info">
-            <span className="college-code">CODE: {item.college.code}</span>
-            <h3>{item.college.name}</h3>
-            <p className="branch-label">{item.branch.name} ({item.branch.code})</p>
-            
-            <div className="college-metadata-row">
-              <span className="meta-badge"><MapPin size={12} /> {item.college.district.name}</span>
-              <span className="meta-badge"><Award size={12} /> {item.college.status}</span>
-              {item.college.autonomous && <span className="meta-badge label-auto">Autonomous</span>}
-              {item.college.hostel_availability && <span className="meta-badge">Hostel Available</span>}
+      <div key={id} className="result-card">
+        {/* Top Row */}
+        <div className="card-top">
+          <div className="card-left">
+            <div className="card-badges-row">
+              <span className="code-badge">#{item.college.code}</span>
+              <span className="status-badge">{item.college.status}</span>
+              {item.college.autonomous && <span className="auto-badge">Autonomous</span>}
+            </div>
+            <h3 className="college-name">{item.college.name}</h3>
+            <p className="branch-name">{item.branch.name}</p>
+            <div className="meta-row">
+              <span className="meta-item"><MapPin size={11}/>{item.college.district.name}</span>
+              {item.college.fees && <span className="meta-item">₹{(item.college.fees/1000).toFixed(0)}K/yr</span>}
+              {item.college.average_package && <span className="meta-item"><BarChart2 size={11}/>{item.college.average_package} LPA avg</span>}
+              {item.college.hostel_availability && <span className="meta-item hostel">🏠 Hostel</span>}
             </div>
           </div>
 
-          <div className="prediction-metrics">
-            <div className="probability-display" style={{ color: probColor }}>
-              <span className="prob-pct">{item.admission_probability}%</span>
-              <span className="prob-lbl">{statusBucket}</span>
+          <div className="card-right">
+            <div className="prob-circle" style={{ background: meta.bg, borderColor: meta.color }}>
+              <span className="prob-num" style={{ color: meta.color }}>{item.admission_probability}%</span>
+              <span className="prob-tag" style={{ color: meta.color }}>{bucket}</span>
             </div>
-            
-            <button 
-              className={`add-pref-btn ${isAdded ? 'added' : ''}`}
-              onClick={() => handleAddToPreferences(item)}
-              disabled={isAdded}
+            <button
+              className={`save-btn ${isSaved ? 'saved' : ''}`}
+              onClick={() => addToPreferences(item)}
+              disabled={isSaved}
             >
-              {isAdded ? (
-                <>
-                  <BookmarkCheck size={16} />
-                  <span>Added</span>
-                </>
-              ) : (
-                <>
-                  <Plus size={16} />
-                  <span>Add Preference</span>
-                </>
-              )}
+              {isSaved ? <><BookmarkCheck size={14}/> Saved</> : <><Plus size={14}/> Add Pref</>}
             </button>
           </div>
         </div>
 
-        {/* Dynamic visual probability bar */}
-        <div className="probability-bar-bg">
-          <div 
-            className="probability-bar-fill" 
-            style={{ width: `${item.admission_probability}%`, backgroundColor: probColor }}
-          ></div>
+        {/* Probability Bar */}
+        <div className="prob-bar-track">
+          <div className="prob-bar-fill" style={{ width: `${item.admission_probability}%`, background: meta.color }}/>
         </div>
 
-        <div className="card-secondary-details">
-          <div className="details-grid">
-            <div>
-              <p className="detail-lbl">Average Placement</p>
-              <p className="detail-val">{item.college.average_package ? `${item.college.average_package} LPA` : 'N/A'}</p>
-            </div>
-            <div>
-              <p className="detail-lbl">Highest Placement</p>
-              <p className="detail-val">{item.college.highest_package ? `${item.college.highest_package} LPA` : 'N/A'}</p>
-            </div>
-            <div>
-              <p className="detail-lbl">Annual Open Fees</p>
-              <p className="detail-val">{item.college.fees ? `Rs. ${item.college.fees.toLocaleString()}` : 'N/A'}</p>
-            </div>
-            <div>
-              <p className="detail-lbl">Vacant Seats</p>
-              <p className="detail-val badge-vacant">{item.current_vacant_seats} vacant</p>
-            </div>
-          </div>
-          
-          <p className="ai-explanation">
-            <strong>AI Trend Review:</strong> {item.explanation}
-          </p>
+        {/* Explanation */}
+        <p className="explanation-text">{item.explanation.slice(0, 160)}{item.explanation.length > 160 ? '...' : ''}</p>
 
-          {/* Cutoffs Toggle Accordion */}
-          <div className="accordion-wrapper">
-            <button className="accordion-trigger-btn" onClick={() => toggleExpand(id)}>
-              {isExpanded ? 'Hide Historical Cutoffs' : 'Show Historical Cutoffs & Links'}
-            </button>
-            
-            {isExpanded && (
-              <div className="accordion-content">
-                <table className="cutoffs-table">
-                  <thead>
-                    <tr>
-                      <th>Year</th>
-                      <th>CAP Round</th>
-                      <th>Seat Category</th>
-                      <th>Percentile</th>
-                      <th>Closing Rank</th>
+        {/* Accordion: Historical Cutoffs */}
+        <button className="cutoff-toggle" onClick={() => toggleExpand(id)}>
+          {isExpanded ? <><ChevronUp size={14}/> Hide cutoff history</> : <><ChevronDown size={14}/> Show 3-year closing cutoffs</>}
+        </button>
+
+        {isExpanded && (
+          <div className="cutoff-table-wrap">
+            <table className="cutoff-table">
+              <thead>
+                <tr><th>Year</th><th>Round</th><th>Category</th><th>Closing %ile</th><th>Rank</th></tr>
+              </thead>
+              <tbody>
+                {Object.entries(item.category_closing_percentiles).map(([yr, entries]) =>
+                  entries.map((e, idx) => (
+                    <tr key={`${yr}_${idx}`}>
+                      <td>{yr}</td>
+                      <td>R{e.round}</td>
+                      <td>{item.seat_type}</td>
+                      <td className="cutoff-pct">{e.percentile}%</td>
+                      <td>#{e.rank}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(item.category_closing_percentiles).map(([yr, entries]) => 
-                      entries.map((entry, idx) => (
-                        <tr key={`${yr}_${idx}`}>
-                          <td>{yr}</td>
-                          <td>Round {entry.round}</td>
-                          <td>{item.seat_type}</td>
-                          <td style={{ color: 'var(--accent-primary)', fontWeight: '600' }}>{entry.percentile}%</td>
-                          <td>#{entry.rank}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-
-                <div className="links-row">
-                  {item.college.official_website && (
-                    <a href={item.college.official_website} target="_blank" rel="noreferrer" className="link-item">
-                      <Globe size={14} /> Official Website
-                    </a>
-                  )}
-                  {item.college.maps_location && (
-                    <a href={item.college.maps_location} target="_blank" rel="noreferrer" className="link-item">
-                      <Map size={14} /> Google Maps
-                    </a>
-                  )}
-                </div>
-              </div>
+                  ))
+                )}
+              </tbody>
+            </table>
+            {item.college.official_website && (
+              <a href={item.college.official_website} target="_blank" rel="noreferrer" className="website-link">
+                <Globe size={12}/> Official Website <ExternalLink size={10}/>
+              </a>
             )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="predictor-workspace animate-fade-in">
-      <div className="page-header">
-        <div className="title-area">
-          <Compass className="header-icon" />
-          <div>
-            <h1>AI College Admission Predictor</h1>
-            <p>Recommendations classified based on your percentile & category preferences.</p>
-          </div>
-        </div>
-        
-        {profile && (
-          <div className="scores-badge glass-panel">
-            <div>
-              <span className="badge-lbl">YOUR Percentile</span>
-              <span className="badge-val">{profile.percentile}%</span>
-            </div>
-            <div>
-              <span className="badge-lbl">State Rank</span>
-              <span className="badge-val">#{profile.rank}</span>
-            </div>
-            <div>
-              <span className="badge-lbl">Category</span>
-              <span className="badge-val">{profile.category}</span>
-            </div>
           </div>
         )}
       </div>
+    );
+  };
 
-      {error ? (
-        <div className="error-card glass-panel">
-          <AlertCircle size={32} className="error-icon" />
-          <p>{error}</p>
-          <Link href="/" className="btn btn-primary mt-15">
-            Configure Profile Scores
-          </Link>
+  // ─── Render ──────────────────────────────────────────────────────────────
+  return (
+    <div className="pred-page">
+
+      {/* ── Hero Form ── */}
+      <div className="hero-section">
+        <div className="hero-text">
+          <h1><Compass size={28} className="hero-icon"/> MHT CET College Predictor</h1>
+          <p>Enter your percentile to instantly see which colleges you can get — based on official 3-year CAP cutoff data.</p>
         </div>
-      ) : loading ? (
-        <div className="loader-container">
-          <div className="loader"></div>
-          <p>AI Engine is analyzing historic closing cutoffs and vacancies... please wait.</p>
-        </div>
-      ) : (
-        <>
-          {/* SEARCH & FILTERS WORKSPACE */}
-          <div className="filters-workspace glass-panel">
-            <div className="search-box">
-              <Search className="search-icon" size={18} />
-              <input 
-                type="text" 
-                placeholder="Search by college name, code, or branch..." 
-                className="search-input"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+
+        <form onSubmit={handleSearch} className="search-form glass-panel">
+          {/* Row 1: Percentile + Category + Gender */}
+          <div className="form-row-main">
+            <div className="form-field">
+              <label>MHT CET Percentile <span className="req">*</span></label>
+              <input
+                type="number"
+                min="0" max="100" step="0.0001"
+                placeholder="e.g. 92.45"
+                value={percentile}
+                onChange={e => setPercentile(e.target.value)}
+                className="text-input"
+                required
               />
             </div>
-
-            <div className="dropdowns-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-              <div className="filter-group">
-                <label>Preferred District</label>
-                <select value={selectedDistrict} onChange={(e) => setSelectedDistrict(e.target.value)} className="filter-select">
-                  <option value="ALL">All Districts</option>
-                  {districts.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
-
-              <div className="filter-group">
-                <label>Sort Results By</label>
-                <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="filter-select">
-                  <option value="PROBABILITY_DESC">Highest Probability First</option>
-                  <option value="FEES_ASC">Lowest Annual Fees First</option>
-                  <option value="PLACEMENT_DESC">Highest Placements First</option>
-                </select>
-              </div>
+            <div className="form-field">
+              <label>Category</label>
+              <select value={category} onChange={e => setCategory(e.target.value)} className="sel-input">
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
-
-            <div className="branch-filter-section" style={{ gridColumn: 'span 2', borderTop: '1px solid var(--panel-border)', paddingTop: '15px', marginTop: '10px' }}>
-              <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 500 }}>
-                Filter by Course / Branch (Select Multiple)
-              </label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {branches.map(b => {
-                  const isSelected = selectedBranches.includes(b);
-                  return (
-                    <button
-                      type="button"
-                      key={b}
-                      onClick={() => {
-                        if (isSelected) {
-                          setSelectedBranches(selectedBranches.filter(x => x !== b));
-                        } else {
-                          setSelectedBranches([...selectedBranches, b]);
-                        }
-                      }}
-                      className={`toggle-option-btn ${isSelected ? 'active' : ''}`}
-                    >
-                      {b}
-                    </button>
-                  );
-                })}
-                {selectedBranches.length > 0 && (
-                  <button 
-                    type="button"
-                    onClick={() => setSelectedBranches([])}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--accent-secondary)', fontSize: '0.75rem', cursor: 'pointer', marginLeft: '5px', textDecoration: 'underline' }}
-                  >
-                    Clear Branch Filter
-                  </button>
-                )}
-              </div>
+            <div className="form-field">
+              <label>Gender</label>
+              <select value={gender} onChange={e => setGender(e.target.value)} className="sel-input">
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+              </select>
+            </div>
+            <div className="form-field">
+              <label>College Type</label>
+              <select value={govPref} onChange={e => setGovPref(e.target.value)} className="sel-input">
+                <option value="ANY">Any</option>
+                <option value="GOVT">Government Only</option>
+                <option value="PVT">Private Only</option>
+              </select>
             </div>
           </div>
 
-          {/* BUCKETS GRID CONTAINER */}
-          <div className="buckets-grid">
-            {/* SAFE BUCKET */}
-            <div className="bucket-column">
-              <div className="bucket-header">
-                <span className="badge badge-safe">95–100%</span>
-                <h2>Safe Colleges</h2>
-                <p>High security options. You are almost certain to get allocated here.</p>
-              </div>
-              <div className="bucket-list">
-                {processBucketList(predictions["Safe"]).length > 0 ? (
-                  processBucketList(predictions["Safe"]).map(item => rendersBucketCard(item, 'Safe'))
-                ) : (
-                  <div className="empty-bucket-card">No safe colleges match your filters.</div>
-                )}
-              </div>
-            </div>
-
-            {/* HIGH CHANCE BUCKET */}
-            <div className="bucket-column">
-              <div className="bucket-header">
-                <span className="badge badge-high">75–95%</span>
-                <h2>High Chance</h2>
-                <p>Strong targets. Your percentile matches well with previous closing cutoffs.</p>
-              </div>
-              <div className="bucket-list">
-                {processBucketList(predictions["High Chance"]).length > 0 ? (
-                  processBucketList(predictions["High Chance"]).map(item => rendersBucketCard(item, 'High Chance'))
-                ) : (
-                  <div className="empty-bucket-card">No high chance colleges match your filters.</div>
-                )}
-              </div>
-            </div>
-
-            {/* MODERATE CHANCE BUCKET */}
-            <div className="bucket-column">
-              <div className="bucket-header">
-                <span className="badge badge-moderate">50–75%</span>
-                <h2>Moderate Chance</h2>
-                <p>Competitive target range. Admissions depend on rounds and vacancy counts.</p>
-              </div>
-              <div className="bucket-list">
-                {processBucketList(predictions["Moderate Chance"]).length > 0 ? (
-                  processBucketList(predictions["Moderate Chance"]).map(item => rendersBucketCard(item, 'Moderate Chance'))
-                ) : (
-                  <div className="empty-bucket-card">No moderate colleges match your filters.</div>
-                )}
-              </div>
-            </div>
-
-            {/* DREAM BUCKET */}
-            <div className="bucket-column">
-              <div className="bucket-header">
-                <span className="badge badge-dream">Below 50%</span>
-                <h2>Dream Colleges</h2>
-                <p>High reach options. Highly competitive but worth adding at the top of your list.</p>
-              </div>
-              <div className="bucket-list">
-                {processBucketList(predictions["Dream"]).length > 0 ? (
-                  processBucketList(predictions["Dream"]).map(item => rendersBucketCard(item, 'Dream'))
-                ) : (
-                  <div className="empty-bucket-card">No dream colleges match your filters.</div>
-                )}
-              </div>
+          {/* Branches */}
+          <div className="chips-field">
+            <label>Preferred Branches <span className="hint-text">(select any — leave blank for all)</span></label>
+            <div className="chips-row">
+              {ALL_BRANCHES.map(b => (
+                <button key={b} type="button"
+                  className={`chip ${selectedBranches.includes(b) ? 'chip-active' : ''}`}
+                  onClick={() => toggleBranch(b)}
+                >{b}</button>
+              ))}
             </div>
           </div>
-        </>
+
+          {/* Advanced Toggle */}
+          <button type="button" className="adv-toggle" onClick={() => setShowAdvanced(!showAdvanced)}>
+            <Filter size={14}/> {showAdvanced ? 'Hide' : 'Show'} District & Advanced Filters
+          </button>
+
+          {showAdvanced && (
+            <div className="advanced-section">
+              <div className="chips-field">
+                <label>Preferred Districts <span className="hint-text">(leave blank for all Maharashtra)</span></label>
+                <div className="chips-row">
+                  {DISTRICTS.map(d => (
+                    <button key={d} type="button"
+                      className={`chip ${selectedDistricts.includes(d) ? 'chip-active' : ''}`}
+                      onClick={() => toggleDistrict(d)}
+                    >{d}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && <p className="form-error">{error}</p>}
+
+          <button type="submit" className="predict-btn" disabled={loading}>
+            {loading ? (
+              <><span className="btn-spinner"/>&nbsp;&nbsp;Analyzing {totalResults > 0 ? totalResults : ''} records...</>
+            ) : (
+              <><Zap size={18}/>&nbsp;Predict My Colleges</>
+            )}
+          </button>
+        </form>
+      </div>
+
+      {/* ── Results Section ── */}
+      {loading && (
+        <div className="loading-state">
+          <div className="spinner-ring"/>
+          <p>Scanning 35,000+ historical cutoff records across 379 colleges...</p>
+        </div>
       )}
 
-      <style jsx>{`
-        .predictor-workspace {
-          max-width: 100%;
-          margin: 0 auto;
-        }
-        
-        .page-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 30px;
-        }
-        
-        .title-area {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-        }
-        .header-icon {
-          color: var(--accent-primary);
-          width: 36px;
-          height: 36px;
-        }
-        
-        .scores-badge {
-          display: flex;
-          gap: 20px;
-          padding: 12px 24px;
-        }
-        .badge-lbl {
-          display: block;
-          font-size: 0.72rem;
-          color: var(--text-secondary);
-          text-transform: uppercase;
-          font-weight: 600;
-        }
-        .badge-val {
-          font-size: 1.1rem;
-          font-weight: 700;
-          color: var(--accent-primary);
-        }
-        
-        .error-card {
-          text-align: center;
-          padding: 60px;
-          max-width: 500px;
-          margin: 40px auto;
-        }
-        .error-icon {
-          color: var(--error-color);
-          margin-bottom: 15px;
-        }
-        .mt-15 {
-          margin-top: 15px;
-        }
-        
-        .loader-container {
-          text-align: center;
-          padding: 80px;
-        }
-        .loader {
-          width: 50px;
-          height: 50px;
-          border: 4px solid rgba(255, 255, 255, 0.05);
-          border-top-color: var(--accent-primary);
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin: 0 auto 20px auto;
-        }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        
-        .filters-workspace {
-          display: grid;
-          grid-template-columns: 1fr 1.2fr;
-          gap: 30px;
-          align-items: center;
-          padding: 16px 24px;
-          margin-bottom: 30px;
-        }
-        
-        .search-box {
-          position: relative;
-          display: flex;
-          align-items: center;
-        }
-        .search-icon {
-          position: absolute;
-          left: 14px;
-          color: var(--text-secondary);
-        }
-        .search-input {
-          width: 100%;
-          padding: 12px 16px 12px 42px;
-          background: rgba(0,0,0,0.2);
-          border: 1px solid var(--panel-border);
-          color: var(--text-primary);
-          border-radius: 10px;
-          outline: none;
-        }
-        .search-input:focus {
-          border-color: var(--accent-primary);
-        }
-        
-        .dropdowns-row {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 15px;
-        }
-        .filter-group label {
-          display: block;
-          font-size: 0.72rem;
-          color: var(--text-secondary);
-          text-transform: uppercase;
-          margin-bottom: 4px;
-          font-weight: 500;
-        }
-        .filter-select {
-          width: 100%;
-          padding: 10px;
-          background: rgba(0,0,0,0.2);
-          border: 1px solid var(--panel-border);
-          color: var(--text-primary);
-          border-radius: 8px;
-          outline: none;
-        }
-        
-        .buckets-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 20px;
-          align-items: start;
-        }
-        
-        .bucket-column {
-          display: flex;
-          flex-direction: column;
-          gap: 15px;
-        }
-        
-        .bucket-header {
-          padding: 10px;
-        }
-        .bucket-header h2 {
-          font-size: 1.15rem;
-          margin: 8px 0 4px 0;
-        }
-        .bucket-header p {
-          font-size: 0.78rem;
-          color: var(--text-secondary);
-          line-height: 1.4;
-        }
-        
-        .bucket-list {
-          display: flex;
-          flex-direction: column;
-          gap: 15px;
-          max-height: 70vh;
-          overflow-y: auto;
-          padding-right: 4px;
-        }
-        
-        .empty-bucket-card {
-          text-align: center;
-          padding: 30px;
-          border: 1px dashed var(--panel-border);
-          border-radius: 12px;
-          color: var(--text-secondary);
-          font-size: 0.85rem;
-        }
-        
-        .prediction-card {
-          padding: 16px;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-        
-        .card-primary-row {
-          display: flex;
-          justify-content: space-between;
-          gap: 10px;
-        }
-        
-        .college-code {
-          font-size: 0.65rem;
-          color: var(--accent-primary);
-          font-weight: 700;
-          letter-spacing: 0.05em;
-        }
-        .college-info h3 {
-          font-size: 0.92rem;
-          margin: 2px 0;
-          line-height: 1.3;
-        }
-        .branch-label {
-          font-size: 0.8rem;
-          color: var(--text-secondary);
-          margin-bottom: 6px;
-        }
-        
-        .college-metadata-row {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 4px;
-        }
-        .meta-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          font-size: 0.65rem;
-          background: rgba(255,255,255,0.03);
-          border: 1px solid var(--panel-border);
-          padding: 2px 6px;
-          border-radius: 4px;
-          color: var(--text-secondary);
-        }
-        .label-auto {
-          border-color: var(--accent-secondary);
-          color: var(--accent-secondary);
-        }
-        
-        .prediction-metrics {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-end;
-          justify-content: space-between;
-          min-width: 90px;
-        }
-        .probability-display {
-          text-align: right;
-        }
-        .prob-pct {
-          display: block;
-          font-size: 1.4rem;
-          font-weight: 800;
-          font-family: var(--font-heading);
-          line-height: 1;
-        }
-        .prob-lbl {
-          font-size: 0.68rem;
-          font-weight: 600;
-          text-transform: uppercase;
-        }
-        
-        .add-pref-btn {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 4px;
-          padding: 6px 10px;
-          border-radius: 6px;
-          background: var(--accent-primary);
-          color: #ffffff;
-          border: none;
-          font-size: 0.72rem;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-        .add-pref-btn:hover {
-          background: var(--accent-primary-hover);
-        }
-        .add-pref-btn.added {
-          background: rgba(16, 185, 129, 0.1);
-          color: var(--success-color);
-          border: 1px solid rgba(16, 185, 129, 0.2);
-          cursor: not-allowed;
-        }
-        
-        .probability-bar-bg {
-          width: 100%;
-          height: 3px;
-          background: rgba(255,255,255,0.05);
-          border-radius: 2px;
-          overflow: hidden;
-        }
-        .probability-bar-fill {
-          height: 100%;
-          border-radius: 2px;
-        }
-        
-        .card-secondary-details {
-          border-top: 1px solid var(--panel-border);
-          padding-top: 10px;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-        
-        .details-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 8px 15px;
-        }
-        .detail-lbl {
-          font-size: 0.65rem;
-          color: var(--text-secondary);
-          margin-bottom: 2px;
-        }
-        .detail-val {
-          font-size: 0.8rem;
-          font-weight: 600;
-        }
-        .badge-vacant {
-          color: var(--warning-color);
-        }
-        
-        .ai-explanation {
-          font-size: 0.76rem;
-          color: var(--text-secondary);
-          line-height: 1.4;
-          background: rgba(255,255,255,0.01);
-          border-left: 2px solid var(--accent-primary);
-          padding-left: 8px;
-        }
-        
-        .accordion-wrapper {
-          margin-top: 4px;
-        }
-        .accordion-trigger-btn {
-          width: 100%;
-          text-align: center;
-          background: transparent;
-          border: none;
-          color: var(--accent-secondary);
-          font-size: 0.72rem;
-          font-weight: 600;
-          cursor: pointer;
-          text-decoration: underline;
-        }
-        
-        .accordion-content {
-          margin-top: 10px;
-          padding: 8px;
-          background: rgba(0,0,0,0.1);
-          border-radius: 6px;
-        }
-        
-        .cutoffs-table {
-          width: 100%;
-          font-size: 0.7rem;
-          border-collapse: collapse;
-          margin-bottom: 8px;
-        }
-        .cutoffs-table th, .cutoffs-table td {
-          padding: 4px;
-          text-align: left;
-          border-bottom: 1px solid var(--panel-border);
-        }
-        .cutoffs-table th {
-          color: var(--text-secondary);
-          font-weight: 600;
-        }
-        
-        .links-row {
-          display: flex;
-          gap: 12px;
-        }
-        .link-item {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          font-size: 0.72rem;
-          color: var(--text-secondary);
-          text-decoration: underline;
-        }
-        .link-item:hover {
-          color: var(--text-primary);
-        }
+      {results && !loading && (
+        <div className="results-section">
+          {/* Summary Bar */}
+          <div className="summary-bar glass-panel">
+            <div className="summary-left">
+              <Compass size={18} className="summary-icon"/>
+              <span><strong>{totalResults}</strong> colleges matched for <strong>{percentile}%ile</strong> — <strong>{category}</strong> category</span>
+            </div>
+            <div className="bucket-tabs">
+              {BUCKETS.map(b => {
+                const count = processResults(results[b] || []).length;
+                const meta  = BUCKET_META[b];
+                return (
+                  <button
+                    key={b}
+                    className={`bucket-tab ${activeBucket === b ? 'tab-active' : ''}`}
+                    style={activeBucket === b ? { borderColor: meta.color, color: meta.color } : {}}
+                    onClick={() => setActiveBucket(b)}
+                  >
+                    <span className="tab-icon">{meta.icon}</span>
+                    <span>{b}</span>
+                    <span className="tab-count" style={{ background: meta.bg, color: meta.color }}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-        @media (max-width: 1400px) {
-          .buckets-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-        }
-        @media (max-width: 768px) {
-          .page-header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 15px;
-          }
-          .filters-workspace {
-            grid-template-columns: 1fr;
-            gap: 15px;
-          }
-          .buckets-grid {
-            grid-template-columns: 1fr;
-          }
-          .bucket-list {
-            max-height: none;
-            overflow-y: visible;
-          }
-        }
-        
-        @media (max-width: 480px) {
-          .card-primary-row {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 12px;
-          }
-          .prediction-metrics {
-            align-items: flex-start;
-            width: 100%;
-            flex-direction: row;
-            justify-content: space-between;
-            border-top: 1px solid var(--panel-border);
-            padding-top: 12px;
-            margin-top: 4px;
-          }
-          .probability-display {
-            text-align: left;
-          }
-        }
-        
-        .toggle-option-btn {
-          padding: 6px 12px;
-          border-radius: 20px;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid var(--panel-border);
-          color: var(--text-secondary);
-          font-size: 0.78rem;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-        .toggle-option-btn:hover {
-          color: var(--text-primary);
-          background: rgba(255, 255, 255, 0.06);
-        }
-        .toggle-option-btn.active {
-          background: rgba(99, 102, 241, 0.15);
-          border-color: var(--accent-primary);
-          color: var(--accent-primary);
-          font-weight: 600;
-        }
-      `}</style>
+          {/* Filter Row */}
+          <div className="filter-bar glass-panel">
+            <div className="filter-search-wrap">
+              <Search size={15} className="fsearch-icon"/>
+              <input
+                type="text"
+                placeholder="Search college or branch..."
+                className="filter-search"
+                value={searchQ}
+                onChange={e => setSearchQ(e.target.value)}
+              />
+              {searchQ && <button className="clear-btn" onClick={() => setSearchQ('')}><X size={14}/></button>}
+            </div>
+            <select className="filter-sel" value={filterDistrict} onChange={e => setFilterDistrict(e.target.value)}>
+              <option value="ALL">All Districts</option>
+              {allResultDistricts.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <select className="filter-sel" value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
+              <option value="ALL">All Branches</option>
+              {allResultBranches.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+            <select className="filter-sel" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+              <option value="PROB_DESC">Highest Probability</option>
+              <option value="PROB_ASC">Lowest Probability</option>
+              <option value="FEES_ASC">Lowest Fees First</option>
+            </select>
+          </div>
+
+          {/* Active Bucket Header */}
+          {(() => {
+            const meta  = BUCKET_META[activeBucket];
+            const list  = processResults(results[activeBucket] || []);
+            return (
+              <div className="bucket-section">
+                <div className="bucket-heading" style={{ borderColor: meta.color }}>
+                  <span className="bh-icon" style={{ color: meta.color }}>{meta.icon}</span>
+                  <div>
+                    <h2 style={{ color: meta.color }}>{activeBucket} <span className="bh-range">({meta.label})</span></h2>
+                    <p className="bh-desc">{meta.desc}</p>
+                  </div>
+                  <span className="bh-count" style={{ background: meta.bg, color: meta.color }}>{list.length} colleges</span>
+                </div>
+
+                {list.length === 0 ? (
+                  <div className="empty-state">
+                    <p>No colleges in this bucket match your current filters.</p>
+                    {(searchQ || filterDistrict !== 'ALL' || filterBranch !== 'ALL') && (
+                      <button className="clear-all-btn" onClick={() => { setSearchQ(''); setFilterDistrict('ALL'); setFilterBranch('ALL'); }}>
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="cards-list">
+                    {list.map(item => renderCard(item, activeBucket))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Bottom CTA */}
+          <div className="bottom-cta glass-panel">
+            <div>
+              <h3>Built your target list?</h3>
+              <p>Go to the Preference Builder to arrange colleges in your official CAP order.</p>
+            </div>
+            <Link href="/preference-builder" className="btn btn-primary">
+              Open Preference Builder →
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* ── Empty State (first visit) ── */}
+      {!hasSearched && !loading && (
+        <div className="first-visit-hint">
+          <div className="hint-cards-row">
+            {[
+              { icon: '📊', title: '35,000+ Records', desc: 'Official CAP cutoffs from 2022–23, 2023–24 loaded' },
+              { icon: '🏛️', title: '379 Colleges', desc: 'All Maharashtra govt & private engineering colleges' },
+              { icon: '🎯', title: 'Category-Aware', desc: 'OPEN, OBC, SC, ST, EWS, TFWS & more supported' },
+              { icon: '📋', title: '3-Year Trend', desc: 'Weighted probability based on 3 years of closing cutoffs' },
+            ].map(h => (
+              <div key={h.title} className="hint-card glass-panel">
+                <span className="hint-emoji">{h.icon}</span>
+                <h4>{h.title}</h4>
+                <p>{h.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+<style jsx>{`
+  .pred-page { max-width: 100%; }
+
+  /* ── Hero ── */
+  .hero-section { margin-bottom: 32px; }
+  .hero-text { margin-bottom: 20px; }
+  .hero-text h1 {
+    font-size: clamp(1.4rem, 3vw, 2rem);
+    font-weight: 800;
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 8px;
+  }
+  .hero-icon { color: var(--accent-primary); }
+  .hero-text p { color: var(--text-secondary); font-size: 0.95rem; }
+
+  /* ── Search Form ── */
+  .search-form { padding: 28px; display: flex; flex-direction: column; gap: 20px; }
+
+  .form-row-main {
+    display: grid;
+    grid-template-columns: 2fr 1.2fr 1fr 1.2fr;
+    gap: 16px;
+    align-items: end;
+  }
+  .form-field { display: flex; flex-direction: column; gap: 6px; }
+  .form-field label { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+  .req { color: var(--accent-primary); }
+  .hint-text { font-size: 0.7rem; color: var(--text-secondary); text-transform: none; font-weight: 400; }
+
+  .text-input, .sel-input {
+    padding: 11px 14px;
+    background: rgba(0,0,0,0.25);
+    border: 1.5px solid var(--panel-border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s;
+    width: 100%;
+  }
+  .text-input:focus, .sel-input:focus { border-color: var(--accent-primary); }
+
+  /* ── Chips ── */
+  .chips-field { display: flex; flex-direction: column; gap: 10px; }
+  .chips-field label { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+  .chips-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.04);
+    border: 1.5px solid var(--panel-border);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all 0.18s;
+    white-space: nowrap;
+  }
+  .chip:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+  .chip-active {
+    background: rgba(99,102,241,0.15);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    font-weight: 600;
+  }
+
+  .adv-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: transparent; border: none;
+    color: var(--accent-secondary); font-size: 0.82rem;
+    cursor: pointer; text-decoration: underline; padding: 0;
+    width: fit-content;
+  }
+  .advanced-section { padding: 16px 0 0 0; border-top: 1px solid var(--panel-border); }
+
+  .form-error {
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.3);
+    color: #f87171;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+  }
+
+  .predict-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 14px 28px;
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    color: #fff;
+    border: none; border-radius: 12px;
+    font-size: 1rem; font-weight: 700; cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  .predict-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  .predict-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+  .btn-spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Loading ── */
+  .loading-state { text-align: center; padding: 60px 20px; }
+  .spinner-ring {
+    width: 56px; height: 56px;
+    border: 4px solid rgba(255,255,255,0.06);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+  }
+  .loading-state p { color: var(--text-secondary); font-size: 0.9rem; }
+
+  /* ── Summary Bar ── */
+  .summary-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 16px;
+    padding: 14px 20px; margin-bottom: 16px;
+  }
+  .summary-left { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); font-size: 0.88rem; }
+  .summary-icon { color: var(--accent-primary); }
+
+  /* ── Bucket Tabs ── */
+  .bucket-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .bucket-tab {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1.5px solid var(--panel-border);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.8rem; cursor: pointer;
+    transition: all 0.18s;
+    white-space: nowrap;
+  }
+  .bucket-tab:hover { background: rgba(255,255,255,0.07); }
+  .tab-active { font-weight: 700; }
+  .tab-icon { display: flex; align-items: center; }
+  .tab-count {
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 0.72rem; font-weight: 700;
+  }
+
+  /* ── Filter Bar ── */
+  .filter-bar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+    padding: 12px 16px; margin-bottom: 20px;
+  }
+  .filter-search-wrap {
+    display: flex; align-items: center; gap: 0;
+    position: relative; flex: 1; min-width: 180px;
+  }
+  .fsearch-icon { position: absolute; left: 11px; color: var(--text-secondary); pointer-events: none; }
+  .filter-search {
+    width: 100%; padding: 9px 36px 9px 32px;
+    background: rgba(0,0,0,0.2);
+    border: 1.5px solid var(--panel-border);
+    border-radius: 8px; color: var(--text-primary);
+    font-size: 0.85rem; outline: none;
+  }
+  .filter-search:focus { border-color: var(--accent-primary); }
+  .clear-btn {
+    position: absolute; right: 8px;
+    background: transparent; border: none;
+    color: var(--text-secondary); cursor: pointer;
+    display: flex; align-items: center;
+  }
+  .filter-sel {
+    padding: 9px 12px;
+    background: rgba(0,0,0,0.2);
+    border: 1.5px solid var(--panel-border);
+    border-radius: 8px; color: var(--text-primary);
+    font-size: 0.82rem; outline: none;
+    min-width: 140px;
+  }
+
+  /* ── Bucket Section ── */
+  .bucket-section { margin-bottom: 32px; }
+  .bucket-heading {
+    display: flex; align-items: center; gap: 14px;
+    border-left: 4px solid;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 0 10px 10px 0;
+    margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .bh-icon { display: flex; }
+  .bucket-heading h2 { font-size: 1.1rem; font-weight: 700; margin: 0; }
+  .bh-range { font-size: 0.8rem; font-weight: 400; opacity: 0.75; }
+  .bh-desc { font-size: 0.8rem; color: var(--text-secondary); margin: 2px 0 0; }
+  .bh-count {
+    margin-left: auto;
+    padding: 4px 12px; border-radius: 20px;
+    font-size: 0.82rem; font-weight: 700;
+  }
+
+  .cards-list { display: flex; flex-direction: column; gap: 14px; }
+
+  /* ── Result Card ── */
+  .result-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 12px;
+    transition: border-color 0.2s, transform 0.15s;
+  }
+  .result-card:hover { border-color: rgba(255,255,255,0.12); transform: translateY(-1px); }
+
+  .card-top { display: flex; justify-content: space-between; gap: 16px; }
+  .card-left { flex: 1; }
+
+  .card-badges-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .code-badge {
+    font-size: 0.65rem; font-weight: 700; color: var(--accent-primary);
+    background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2);
+    padding: 2px 7px; border-radius: 4px; letter-spacing: 0.04em;
+  }
+  .status-badge {
+    font-size: 0.65rem; color: var(--text-secondary);
+    background: rgba(255,255,255,0.04); border: 1px solid var(--panel-border);
+    padding: 2px 7px; border-radius: 4px;
+  }
+  .auto-badge {
+    font-size: 0.65rem; color: #a78bfa;
+    background: rgba(167,139,250,0.1); border: 1px solid rgba(167,139,250,0.2);
+    padding: 2px 7px; border-radius: 4px;
+  }
+
+  .college-name { font-size: 0.97rem; font-weight: 700; margin: 0 0 4px 0; line-height: 1.3; }
+  .branch-name  { font-size: 0.82rem; color: var(--accent-secondary); font-weight: 600; margin: 0 0 8px 0; }
+
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .meta-item {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 0.72rem; color: var(--text-secondary);
+  }
+  .hostel { color: #a78bfa; }
+
+  .card-right {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 10px; min-width: 90px;
+  }
+  .prob-circle {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    border: 2.5px solid;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .prob-num { font-size: 1.2rem; font-weight: 800; line-height: 1; }
+  .prob-tag { font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+
+  .save-btn {
+    display: flex; align-items: center; gap: 4px;
+    padding: 6px 10px; border-radius: 8px;
+    background: var(--accent-primary); color: #fff;
+    border: none; font-size: 0.7rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  }
+  .save-btn:hover { opacity: 0.85; }
+  .save-btn.saved {
+    background: rgba(16,185,129,0.1); color: #10b981;
+    border: 1px solid rgba(16,185,129,0.25); cursor: default;
+  }
+
+  .prob-bar-track {
+    width: 100%; height: 3px;
+    background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden;
+  }
+  .prob-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+
+  .explanation-text {
+    font-size: 0.78rem; color: var(--text-secondary); line-height: 1.5;
+    border-left: 2px solid var(--accent-primary);
+    padding-left: 10px; margin: 0;
+  }
+
+  .cutoff-toggle {
+    display: flex; align-items: center; gap: 5px;
+    background: transparent; border: none;
+    color: var(--accent-secondary); font-size: 0.76rem;
+    font-weight: 600; cursor: pointer; text-decoration: underline;
+    width: fit-content; padding: 0;
+  }
+
+  .cutoff-table-wrap {
+    background: rgba(0,0,0,0.2); border-radius: 8px; padding: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .cutoff-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+  .cutoff-table th, .cutoff-table td { padding: 5px 8px; border-bottom: 1px solid var(--panel-border); text-align: left; }
+  .cutoff-table th { color: var(--text-secondary); font-weight: 600; }
+  .cutoff-pct { color: var(--accent-primary); font-weight: 700; }
+  .website-link {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 0.72rem; color: var(--text-secondary); text-decoration: underline;
+  }
+  .website-link:hover { color: var(--text-primary); }
+
+  /* ── Empty State ── */
+  .empty-state {
+    text-align: center; padding: 40px 20px;
+    border: 1px dashed var(--panel-border); border-radius: 12px;
+    color: var(--text-secondary);
+  }
+  .clear-all-btn {
+    margin-top: 12px; padding: 7px 16px;
+    background: transparent; border: 1px solid var(--panel-border);
+    color: var(--text-secondary); border-radius: 8px;
+    font-size: 0.82rem; cursor: pointer;
+  }
+  .clear-all-btn:hover { color: var(--text-primary); }
+
+  /* ── Bottom CTA ── */
+  .bottom-cta {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 16px; padding: 20px 24px; margin-top: 24px;
+  }
+  .bottom-cta h3 { font-size: 1rem; font-weight: 700; margin: 0 0 4px; }
+  .bottom-cta p  { font-size: 0.82rem; color: var(--text-secondary); margin: 0; }
+
+  /* ── First Visit Hint ── */
+  .first-visit-hint { margin-top: 40px; }
+  .hint-cards-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .hint-card { padding: 24px; text-align: center; }
+  .hint-emoji { font-size: 2rem; display: block; margin-bottom: 10px; }
+  .hint-card h4 { font-size: 0.9rem; font-weight: 700; margin: 0 0 6px; }
+  .hint-card p  { font-size: 0.78rem; color: var(--text-secondary); margin: 0; line-height: 1.4; }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .form-row-main { grid-template-columns: 1fr 1fr; }
+    .hint-cards-row { grid-template-columns: repeat(2, 1fr); }
+    .summary-bar { flex-direction: column; align-items: flex-start; }
+  }
+  @media (max-width: 600px) {
+    .form-row-main { grid-template-columns: 1fr; }
+    .card-top { flex-direction: column; }
+    .card-right { flex-direction: row; align-items: center; justify-content: space-between; width: 100%; }
+    .prob-circle { width: 64px; height: 64px; }
+    .prob-num { font-size: 1rem; }
+    .bucket-tabs { gap: 6px; }
+    .bucket-tab { padding: 6px 10px; font-size: 0.75rem; }
+    .filter-bar { flex-direction: column; }
+    .filter-sel, .filter-search-wrap { width: 100%; }
+    .hint-cards-row { grid-template-columns: 1fr 1fr; }
+    .bh-count { margin-left: 0; }
+    .summary-bar { padding: 12px; }
+    .search-form { padding: 18px; }
+  }
+`}</style>
     </div>
   );
 }
