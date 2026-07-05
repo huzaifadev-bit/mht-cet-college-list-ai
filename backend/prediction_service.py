@@ -1,4 +1,5 @@
 import math
+import httpx
 from typing import List, Dict, Any, Tuple, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -9,22 +10,32 @@ from pydantic import BaseModel
 
 from .models import College, Cutoff, VacancySeat, AcademicYear, Branch
 
+def _make_gemini_client(api_key: str):
+    try:
+        custom_client = httpx.Client(verify=False)
+        return genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(httpx_client=custom_client)
+        )
+    except Exception:
+        return genai.Client(api_key=api_key)
+
 class PredictionService:
     def __init__(self, db: Session, gemini_api_key: Optional[str] = None):
         self.db = db
         self.client = None
         if gemini_api_key:
-            self.client = genai.Client(api_key=gemini_api_key)
+            self.client = _make_gemini_client(gemini_api_key)
 
     def calculate_admission_probability(
         self,
         student_percentile: float,
-        student_rank: int,
         college_code: int,
         branch_code: str,
         category: str,
         gender: str,
-        home_university: str
+        home_university: str,
+        student_rank: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Calculates the admission probability of a student getting a specific college branch.
