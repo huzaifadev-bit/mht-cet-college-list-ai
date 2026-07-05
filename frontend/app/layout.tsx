@@ -150,22 +150,17 @@ export default function RootLayout({
             </nav>
 
             <div className="sidebar-footer">
-              {user ? (
+              {user && user.is_admin ? (
                 <div className="user-profile-widget">
                   <div className="user-info">
                     <p className="user-name">{user.name}</p>
-                    <p className="user-role">{user.is_admin ? 'Administrator' : 'Student Candidate'}</p>
+                    <p className="user-role">Administrator</p>
                   </div>
                   <button className="logout-btn" onClick={handleLogout} title="Logout">
                     <LogOut size={16} />
                   </button>
                 </div>
-              ) : (
-                <Link href="/?login=true" className="login-prompt-btn">
-                  <User size={16} />
-                  <span>Login / Register</span>
-                </Link>
-              )}
+              ) : null}
               
               <button className="sidebar-theme-toggle" onClick={toggleTheme}>
                 {theme === 'dark' ? (
