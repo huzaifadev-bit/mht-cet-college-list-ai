@@ -111,7 +111,7 @@ export default function PredictorPage() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/predict`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           percentile: pct,
           rank: null,
@@ -132,16 +132,27 @@ export default function PredictorPage() {
           placement_priority: false,
         }),
       });
-      const data = await res.json();
+      
+      let data;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        throw new Error(`Failed to parse backend response: ${res.statusText}`);
+      }
+
       if (res.ok) {
         setResults(data);
         // Auto-switch to first non-empty bucket
         const firstFull = BUCKETS.find(b => (data[b] || []).length > 0);
         if (firstFull) setActiveBucket(firstFull);
       } else {
-        throw new Error(data.detail || 'Failed to load predictions');
+        const errorMsg = data && data.detail 
+          ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) 
+          : 'Failed to load predictions';
+        throw new Error(errorMsg);
       }
     } catch (err: any) {
+      console.error(err);
       setError(err.message || 'Error fetching predictions. Make sure the backend is running.');
     } finally {
       setLoading(false);
