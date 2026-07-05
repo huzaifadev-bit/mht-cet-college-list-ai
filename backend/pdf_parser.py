@@ -469,6 +469,129 @@ class MHTCETPDFParser:
             self.db.rollback()
             return 0, f"Error calling Gemini or saving data: {str(e)}"
 
+    def parse_seat_matrix_pdf(self, file_path: str, academic_year_str: str) -> int:
+        """
+        Parses the official MHT CET Provisional Seat Matrix PDF.
+        Each page contains one choice (college + branch) with seat breakdown.
+        Extracts college code, name, status, autonomous flag, branch name, and total intake (SI seats).
+        Stores results in College, Branch, and CollegeBranch tables.
+        Returns number of college-branch records inserted/updated.
+        """
+        self.get_or_create_academic_year(academic_year_str)
+        records_updated = 0
+
+        # Regexes for parsing
+        college_header_re = re.compile(r"^(\d{4,5})\s*-\s*(.+)$")
+        status_re = re.compile(
+            r"^(Government-Aided|Government Aided|Government|Un-Aided|Unaided|Private)\s*(Autonomous)?\s*CAP Seats\s*:?\s*(\d+)",
+            re.IGNORECASE
+        )
+        # Choice line: "100219110 Civil Engineering 60 60 0 0 0 1"
+        choice_line_re = re.compile(
+            r"^(\d{9,10})\s+(.+?)\s+(\d+)\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s*$"
+        )
+
+        with pdfplumber.open(file_path) as pdf:
+            total_pages = len(pdf.pages)
+            current_college_code = None
+            current_college_name = None
+            current_status = "Private"
+            current_autonomous = False
+
+            for page_num, page in enumerate(pdf.pages):
+                text = page.extract_text()
+                if not text:
+                    continue
+
+                lines = [line.strip() for line in text.split("\n") if line.strip()]
+
+                for line in lines:
+                    # College header: "1002 - Government College of Engineering, Amravati"
+                    college_match = college_header_re.match(line)
+                    if college_match:
+                        current_college_code = int(college_match.group(1))
+                        current_college_name = college_match.group(2).strip()
+                        continue
+
+                    # Status line: "Government Autonomous CAP Seats:60"
+                    status_match = status_re.match(line)
+                    if status_match:
+                        raw_status = status_match.group(1).strip().lower()
+                        if "aided" in raw_status:
+                            current_status = "Government Aided"
+                        elif "government" in raw_status:
+                            current_status = "Government"
+                        else:
+                            current_status = "Private"
+                        current_autonomous = bool(status_match.group(2))
+                        continue
+
+                    # Choice code line: "100219110 Civil Engineering 60 60 0 0 0 1"
+                    choice_match = choice_line_re.match(line)
+                    if choice_match and current_college_code:
+                        choice_code_str = choice_match.group(1)
+                        course_name = choice_match.group(2).strip()
+                        si_seats = int(choice_match.group(3))
+
+                        # Branch code = last 5 digits of choice code
+                        branch_code = choice_code_str[-5:]
+
+                        # Upsert College
+                        college = self.db.query(College).filter(College.code == current_college_code).first()
+                        if not college:
+                            district = self.get_or_create_district("Unknown")
+                            university = self.get_or_create_university("Unknown University")
+                            college = College(
+                                code=current_college_code,
+                                name=current_college_name or "Unknown College",
+                                district_id=district.id,
+                                university_id=university.id,
+                                status=current_status,
+                                autonomous=current_autonomous,
+                            )
+                            self.db.add(college)
+                            self.db.flush()
+                        else:
+                            college.status = current_status
+                            college.autonomous = current_autonomous
+                            if current_college_name:
+                                college.name = current_college_name
+
+                        # Upsert Branch
+                        branch = self.db.query(Branch).filter(Branch.code == branch_code).first()
+                        if not branch:
+                            branch = Branch(code=branch_code, name=course_name)
+                            self.db.add(branch)
+                            self.db.flush()
+                        else:
+                            branch.name = course_name
+
+                        # Upsert CollegeBranch with intake
+                        cb = self.db.query(CollegeBranch).filter(
+                            CollegeBranch.college_code == current_college_code,
+                            CollegeBranch.branch_code == branch_code
+                        ).first()
+                        if not cb:
+                            cb = CollegeBranch(
+                                college_code=current_college_code,
+                                branch_code=branch_code,
+                                intake=si_seats
+                            )
+                            self.db.add(cb)
+                        else:
+                            cb.intake = si_seats
+
+                        records_updated += 1
+
+                        # Commit every 500 records to avoid large transactions
+                        if records_updated % 500 == 0:
+                            self.db.commit()
+                            print(f"  Seat matrix: {records_updated} records (page {page_num + 1}/{total_pages})")
+
+        self.db.commit()
+        print(f"Seat matrix parsing complete: {records_updated} college-branch records updated.")
+        return records_updated
+
     @staticmethod
     def map_seat_type_to_category_and_gender(seat_type: str) -> Tuple[str, str]:
         """
