@@ -72,7 +72,7 @@ export default function PredictorPage() {
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('ALL');
-  const [selectedBranch, setSelectedBranch] = useState('ALL');
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState('PROBABILITY_DESC');
 
   // Expanded Accordion State for cutoff details
@@ -234,8 +234,8 @@ export default function PredictorPage() {
     }
     
     // Branch Filter
-    if (selectedBranch !== 'ALL') {
-      list = list.filter(item => item.branch.name === selectedBranch);
+    if (selectedBranches.length > 0) {
+      list = list.filter(item => selectedBranches.includes(item.branch.name));
     }
     
     // Sort
@@ -457,20 +457,12 @@ export default function PredictorPage() {
               />
             </div>
 
-            <div className="dropdowns-row">
+            <div className="dropdowns-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
               <div className="filter-group">
                 <label>Preferred District</label>
                 <select value={selectedDistrict} onChange={(e) => setSelectedDistrict(e.target.value)} className="filter-select">
                   <option value="ALL">All Districts</option>
                   {districts.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
-
-              <div className="filter-group">
-                <label>Branch Select</label>
-                <select value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)} className="filter-select">
-                  <option value="ALL">All Branches</option>
-                  {branches.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
               </div>
 
@@ -481,6 +473,42 @@ export default function PredictorPage() {
                   <option value="FEES_ASC">Lowest Annual Fees First</option>
                   <option value="PLACEMENT_DESC">Highest Placements First</option>
                 </select>
+              </div>
+            </div>
+
+            <div className="branch-filter-section" style={{ gridColumn: 'span 2', borderTop: '1px solid var(--panel-border)', paddingTop: '15px', marginTop: '10px' }}>
+              <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 500 }}>
+                Filter by Course / Branch (Select Multiple)
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {branches.map(b => {
+                  const isSelected = selectedBranches.includes(b);
+                  return (
+                    <button
+                      type="button"
+                      key={b}
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedBranches(selectedBranches.filter(x => x !== b));
+                        } else {
+                          setSelectedBranches([...selectedBranches, b]);
+                        }
+                      }}
+                      className={`toggle-option-btn ${isSelected ? 'active' : ''}`}
+                    >
+                      {b}
+                    </button>
+                  );
+                })}
+                {selectedBranches.length > 0 && (
+                  <button 
+                    type="button"
+                    onClick={() => setSelectedBranches([])}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--accent-secondary)', fontSize: '0.75rem', cursor: 'pointer', marginLeft: '5px', textDecoration: 'underline' }}
+                  >
+                    Clear Branch Filter
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -944,6 +972,27 @@ export default function PredictorPage() {
           .buckets-grid {
             grid-template-columns: 1fr;
           }
+        }
+        
+        .toggle-option-btn {
+          padding: 6px 12px;
+          border-radius: 20px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid var(--panel-border);
+          color: var(--text-secondary);
+          font-size: 0.78rem;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .toggle-option-btn:hover {
+          color: var(--text-primary);
+          background: rgba(255, 255, 255, 0.06);
+        }
+        .toggle-option-btn.active {
+          background: rgba(99, 102, 241, 0.15);
+          border-color: var(--accent-primary);
+          color: var(--accent-primary);
+          font-weight: 600;
         }
       `}</style>
     </div>
