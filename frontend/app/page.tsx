@@ -76,42 +76,14 @@ export default function LandingPage() {
   const availableDistricts = ['Pune', 'Mumbai', 'Thane', 'Nagpur', 'Nashik', 'Amravati', 'Aurangabad', 'Kolhapur', 'Sangli'];
 
   useEffect(() => {
-    // Check authentication
-    const savedToken = localStorage.getItem('token');
+    // Read saved local profile data to prefill form
     const savedUser = localStorage.getItem('user');
-    if (savedToken && savedUser) {
-      setToken(savedToken);
+    if (savedUser) {
       try {
         const u = JSON.parse(savedUser);
         setUser(u);
-        
-        // Fetch user profile data to prefill form
-        fetchProfile(savedToken);
-      } catch (e) {
-        handleLogout();
-      }
-    }
-  }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setToken(null);
-    setUser(null);
-    window.location.reload();
-  };
-
-  const fetchProfile = async (authToken: string) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`
-        }
-      });
-      if (res.ok) {
-        const userData = await res.json();
-        if (userData.profile_data) {
-          const prof = userData.profile_data;
+        if (u.profile_data) {
+          const prof = u.profile_data;
           setPercentile(prof.percentile?.toString() || '');
           setRank(prof.rank?.toString() || '');
           setCategory(prof.category || 'OPEN');
@@ -130,11 +102,11 @@ export default function LandingPage() {
           setHostelRequired(prof.hostel_required || false);
           setPlacementPriority(prof.placement_priority || false);
         }
+      } catch (e) {
+        console.log('Error loading saved profile:', e);
       }
-    } catch (e) {
-      console.log('Error fetching user profile:', e);
     }
-  };
+  }, []);
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,29 +194,16 @@ export default function LandingPage() {
     };
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/profile`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setProfileMsg('Profile saved successfully! Redirecting to predictor...');
-        // Save profile locally under user key
-        const updatedUser = { ...user, profile_data: payload };
-        localStorage.setItem('user', JSON.stringify(updatedUser));
-        
-        setTimeout(() => {
-          router.push('/predictor');
-        }, 1500);
-      } else {
-        throw new Error(data.detail || 'Failed to save profile');
-      }
+      setProfileMsg('Profile saved successfully! Redirecting to predictor...');
+      // Save profile locally under user key
+      const updatedUser = { ...user, profile_data: payload };
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      
+      setTimeout(() => {
+        router.push('/predictor');
+      }, 1000);
     } catch (err: any) {
-      setProfileMsg(err.message || 'Error saving profile.');
+      setProfileMsg('Error saving profile locally.');
     } finally {
       setProfileSaving(false);
     }
@@ -298,277 +257,283 @@ export default function LandingPage() {
 
         {/* Panel for Authentication or Profile Setup */}
         <div className="auth-profile-panel glass-panel">
-          {!token ? (
-            /* Auth Login/Registration forms */
-            <div className="auth-container">
-              <div className="auth-tabs">
-                <button 
-                  className={`auth-tab ${isLoginView ? 'active' : ''}`}
-                  onClick={() => setIsLoginView(true)}
-                >
-                  Login
-                </button>
-                <button 
-                  className={`auth-tab ${!isLoginView ? 'active' : ''}`}
-                  onClick={() => setIsLoginView(false)}
-                >
-                  Register
-                </button>
-              </div>
-
-              <form onSubmit={handleAuthSubmit} className="auth-form">
-                {!isLoginView && (
-                  <div className="form-group">
-                    <label className="form-label">Full Name</label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
-                      placeholder="Enter your name" 
-                      value={authName}
-                      onChange={(e) => setAuthName(e.target.value)}
-                      required
-                    />
-                  </div>
-                )}
-                <div className="form-group">
-                  <label className="form-label">Email Address</label>
-                  <input 
-                    type="email" 
-                    className="form-input" 
-                    placeholder="student@example.com" 
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Password</label>
-                  <input 
-                    type="password" 
-                    className="form-input" 
-                    placeholder="••••••••" 
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    required
-                  />
-                </div>
-
-                {authError && <p className="auth-error-msg">{authError}</p>}
-                {authSuccess && <p className="auth-success-msg">{authSuccess}</p>}
-
-                <button type="submit" className="btn btn-primary w-full" disabled={authLoading}>
-                  {authLoading ? 'Verifying...' : isLoginView ? 'Login to Predictor' : 'Create Account'}
-                  <ArrowRight size={16} />
-                </button>
-              </form>
+          {/* Profile Form Setup */}
+          <div className="profile-setup-container">
+            <div className="profile-header">
+              <h2>Candidate Profile Setup</h2>
+              <p>Input your exact scores to calculate personalized college admission probabilities.</p>
             </div>
-          ) : (
-            /* Profile Form Setup */
-            <div className="profile-setup-container">
-              <div className="profile-header">
-                <h2>Candidate Profile Setup</h2>
-                <p>Input your exact scores to calculate personalized college admission probabilities.</p>
+
+            <form onSubmit={handleProfileSubmit} className="profile-form">
+              <div className="form-row-2">
+                <div className="form-group">
+                  <label className="form-label">MHT CET Percentile</label>
+                  <input 
+                    type="number" 
+                    step="0.0001"
+                    min="0"
+                    max="100"
+                    className="form-input" 
+                    placeholder="e.g. 98.2435" 
+                    value={percentile}
+                    onChange={(e) => setPercentile(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">State Merit Rank</label>
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    placeholder="e.g. 2503" 
+                    value={rank}
+                    onChange={(e) => setRank(e.target.value)}
+                    required
+                  />
+                </div>
               </div>
 
-              <form onSubmit={handleProfileSubmit} className="profile-form">
-                <div className="form-row-2">
-                  <div className="form-group">
-                    <label className="form-label">MHT CET Percentile</label>
-                    <input 
-                      type="number" 
-                      step="0.0001"
-                      min="0"
-                      max="100"
-                      className="form-input" 
-                      placeholder="e.g. 98.2435" 
-                      value={percentile}
-                      onChange={(e) => setPercentile(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">State Merit Rank</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      placeholder="e.g. 2503" 
-                      value={rank}
-                      onChange={(e) => setRank(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row-2">
-                  <div className="form-group">
-                    <label className="form-label">Admission Category</label>
-                    <select 
-                      className="form-input" 
-                      value={category} 
-                      onChange={(e) => setCategory(e.target.value)}
-                    >
-                      <option value="OPEN">OPEN (General)</option>
-                      <option value="OBC">OBC</option>
-                      <option value="SC">SC</option>
-                      <option value="ST">ST</option>
-                      <option value="EWS">EWS</option>
-                      <option value="VJNT">VJNT / DT</option>
-                      <option value="SBC">SBC</option>
-                      <option value="TFWS">TFWS</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Candidate Gender</label>
-                    <select 
-                      className="form-input" 
-                      value={gender} 
-                      onChange={(e) => setGender(e.target.value)}
-                    >
-                      <option value="M">Male / General</option>
-                      <option value="F">Female (Ladies Quota)</option>
-                    </select>
-                  </div>
-                </div>
-
+              <div className="form-row-2">
                 <div className="form-group">
-                  <label className="form-label">Home University Status</label>
+                  <label className="form-label">Seat Category</label>
+                  <select 
+                    className="form-input" 
+                    value={category} 
+                    onChange={(e) => setCategory(e.target.value)}
+                  >
+                    <option value="OPEN">OPEN / General</option>
+                    <option value="OBC">OBC</option>
+                    <option value="SC">SC</option>
+                    <option value="ST">ST</option>
+                    <option value="NT1">NT-1 (NT-B)</option>
+                    <option value="NT2">NT-2 (NT-C)</option>
+                    <option value="NT3">NT-3 (NT-D)</option>
+                    <option value="VJDT">VJ / DT (NT-A)</option>
+                    <option value="SBC">SBC</option>
+                    <option value="EWS">EWS</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Gender</label>
+                  <select 
+                    className="form-input" 
+                    value={gender} 
+                    onChange={(e) => setGender(e.target.value)}
+                  >
+                    <option value="M">Male (General)</option>
+                    <option value="F">Female (L-Type)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-row-2">
+                <div className="form-group">
+                  <label className="form-label">Home University Zone</label>
                   <select 
                     className="form-input" 
                     value={homeUniversity} 
                     onChange={(e) => setHomeUniversity(e.target.value)}
                   >
-                    <option value="Savitribai Phule Pune University">Savitribai Phule Pune University (SPPU)</option>
-                    <option value="Mumbai University">Mumbai University (MU)</option>
-                    <option value="Rashtrasant Tukadoji Maharaj Nagpur University">Nagpur University (RTMNU)</option>
-                    <option value="Sant Gadge Baba Amravati University">Amravati University (SGBAU)</option>
-                    <option value="Shivaji University">Shivaji University (Kolhapur)</option>
-                    <option value="Dr. Babasaheb Ambedkar Marathwada University">BAMU (Aurangabad)</option>
-                    <option value="State-Level">Other than Home University / OMS</option>
+                    <option value="Savitribai Phule Pune University">Pune (SPPU)</option>
+                    <option value="Mumbai University">Mumbai (MU)</option>
+                    <option value="Rashtrasant Tukadoji Maharaj Nagpur University">Nagpur (RTMNU)</option>
+                    <option value="Dr. Babasaheb Ambedkar Marathwada University">Aurangabad (BAMU)</option>
+                    <option value="Shivaji University">Kolhapur (SUK)</option>
+                    <option value="Kavayitri Bahinabai Chaudhari North Maharashtra University">Jalgaon (KBCNMU)</option>
+                    <option value="Sant Gadge Baba Amravati University">Amravati (SGBAU)</option>
+                    <option value="State-Level">Other Maharashtra / OMS (JEE Direct)</option>
                   </select>
                 </div>
-
                 <div className="form-group">
-                  <label className="form-label">Branch Preferences (Toggle options)</label>
-                  <div className="options-grid">
-                    {availableBranches.map((br) => (
-                      <button
-                        type="button"
+                  <label className="form-label">Candidature Type</label>
+                  <select 
+                    className="form-input" 
+                    value={candidatureType} 
+                    onChange={(e) => setCandidatureType(e.target.value)}
+                  >
+                    <option value="Type A">Type A (Mah. Birth/Dom)</option>
+                    <option value="Type B">Type B (Parent Dom)</option>
+                    <option value="Type C">Type C (Central Govt Parent)</option>
+                    <option value="Type D">Type D (State Govt Parent)</option>
+                    <option value="Type E">Type E (Karnataka Border)</option>
+                    <option value="All India">All India (Direct JEE Main)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-section-title">Admission Quota Preferences</div>
+              <div className="form-row-3 checkbox-grid">
+                <label className="checkbox-container">
+                  <input 
+                    type="checkbox" 
+                    checked={tfwsStatus} 
+                    onChange={(e) => setTfwsStatus(e.target.checked)}
+                  />
+                  <span className="checkmark"></span>
+                  TFWS Tuition Waiver
+                </label>
+                <label className="checkbox-container">
+                  <input 
+                    type="checkbox" 
+                    checked={defenceStatus} 
+                    onChange={(e) => setDefenceStatus(e.target.checked)}
+                  />
+                  <span className="checkmark"></span>
+                  Defence Child (Def-1/2/3)
+                </label>
+                <label className="checkbox-container">
+                  <input 
+                    type="checkbox" 
+                    checked={phStatus} 
+                    onChange={(e) => setPhStatus(e.target.checked)}
+                  />
+                  <span className="checkmark"></span>
+                  Physically Handicapped (PH)
+                </label>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Religious/Linguistic Minority Status</label>
+                <select 
+                  className="form-input" 
+                  value={minorityStatus} 
+                  onChange={(e) => setMinorityStatus(e.target.value)}
+                >
+                  <option value="None">None</option>
+                  <option value="Muslim">Muslim Minority</option>
+                  <option value="Christian">Christian Minority</option>
+                  <option value="Jain">Jain Minority</option>
+                  <option value="Gujarati">Gujarati Minority</option>
+                  <option value="Sindhi">Sindhi Minority</option>
+                  <option value="Hindi">Hindi Minority</option>
+                </select>
+              </div>
+
+              <div className="form-section-title">Strategic Filters</div>
+              <div className="form-group">
+                <label className="form-label">Preferred Branches</label>
+                <div className="branch-tags-container">
+                  {availableBranches.map(br => {
+                    const selected = selectedBranches.includes(br);
+                    return (
+                      <button 
+                        type="button" 
                         key={br}
-                        className={`toggle-option-btn ${selectedBranches.includes(br) ? 'active' : ''}`}
+                        className={`branch-tag-btn ${selected ? 'selected' : ''}`}
                         onClick={() => toggleBranch(br)}
                       >
                         {br}
                       </button>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
+              </div>
 
-                <div className="form-group">
-                  <label className="form-label">Preferred Districts (Optional)</label>
-                  <div className="options-grid">
-                    {availableDistricts.map((d) => (
-                      <button
-                        type="button"
-                        key={d}
-                        className={`toggle-option-btn ${preferredDistricts.includes(d) ? 'active' : ''}`}
-                        onClick={() => toggleDistrict(d)}
+              <div className="form-group">
+                <label className="form-label">Preferred Districts</label>
+                <div className="branch-tags-container">
+                  {availableDistricts.map(dt => {
+                    const selected = preferredDistricts.includes(dt);
+                    return (
+                      <button 
+                        type="button" 
+                        key={dt}
+                        className={`branch-tag-btn ${selected ? 'selected' : ''}`}
+                        onClick={() => toggleDistrict(dt)}
                       >
-                        {d}
+                        {dt}
                       </button>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
+              </div>
 
-                <div className="form-row-2">
-                  <div className="form-group">
-                    <label className="form-label">Max Annual Tuition Fees (INR)</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      placeholder="e.g. 150000" 
-                      value={maxFees}
-                      onChange={(e) => setMaxFees(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Autonomous Status</label>
-                    <select 
-                      className="form-input" 
-                      value={autonomousPref} 
-                      onChange={(e) => setAutonomousPref(e.target.value)}
-                    >
-                      <option value="ANY">Any College</option>
-                      <option value="AUTONOMOUS">Autonomous Only</option>
-                      <option value="NON-AUTONOMOUS">Non-Autonomous Only</option>
-                    </select>
-                  </div>
+              <div className="form-row-3">
+                <div className="form-group">
+                  <label className="form-label">Max Annual Budget (INR)</label>
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    placeholder="e.g. 150000" 
+                    value={maxFees}
+                    onChange={(e) => setMaxFees(e.target.value)}
+                  />
                 </div>
-
-                <div className="form-row-2">
-                  <div className="form-group">
-                    <label className="form-label">College Management</label>
-                    <select 
-                      className="form-input" 
-                      value={govPrivatePref} 
-                      onChange={(e) => setGovPrivatePref(e.target.value)}
-                    >
-                      <option value="ANY">Any</option>
-                      <option value="GOVT">Government / Govt-Aided Only</option>
-                      <option value="PVT">Private Colleges Only</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Minority Status</label>
-                    <select 
-                      className="form-input" 
-                      value={minorityStatus} 
-                      onChange={(e) => setMinorityStatus(e.target.value)}
-                    >
-                      <option value="None">None</option>
-                      <option value="Gujarati">Gujarati Linguistic</option>
-                      <option value="Sindhi">Sindhi Linguistic</option>
-                      <option value="Muslim">Muslim Religious</option>
-                      <option value="Roman Catholic">Christian Minority</option>
-                    </select>
-                  </div>
+                <div className="form-group">
+                  <label className="form-label">College Status</label>
+                  <select 
+                    className="form-input" 
+                    value={govPrivatePref} 
+                    onChange={(e) => setGovPrivatePref(e.target.value)}
+                  >
+                    <option value="ANY">Any (Govt + Private)</option>
+                    <option value="GOVT">Government Only</option>
+                    <option value="PVT">Private Only</option>
+                  </select>
                 </div>
-
-                <div className="checkboxes-row">
-                  <label className="checkbox-container">
-                    <input 
-                      type="checkbox" 
-                      checked={hostelRequired} 
-                      onChange={(e) => setHostelRequired(e.target.checked)}
-                    />
-                    <span className="checkmark"></span>
-                    Hostel Facility Required
-                  </label>
-                  <label className="checkbox-container">
-                    <input 
-                      type="checkbox" 
-                      checked={placementPriority} 
-                      onChange={(e) => setPlacementPriority(e.target.checked)}
-                    />
-                    <span className="checkmark"></span>
-                    High Placement Packages Priority
-                  </label>
+                <div className="form-group">
+                  <label className="form-label">Autonomy Status</label>
+                  <select 
+                    className="form-input" 
+                    value={autonomousPref} 
+                    onChange={(e) => setAutonomousPref(e.target.value)}
+                  >
+                    <option value="ANY">Any (Autonomous + Non-Aut)</option>
+                    <option value="AUTONOMOUS">Autonomous Only</option>
+                    <option value="NON-AUTONOMOUS">Non-Autonomous Only</option>
+                  </select>
                 </div>
+              </div>
 
-                {profileMsg && <p className="profile-msg">{profileMsg}</p>}
+              <div className="form-row-2" style={{ marginTop: '10px' }}>
+                <label className="checkbox-container">
+                  <input 
+                    type="checkbox" 
+                    checked={hostelRequired} 
+                    onChange={(e) => setHostelRequired(e.target.checked)}
+                  />
+                  <span className="checkmark"></span>
+                  Hostel Facility Required
+                </label>
+                <label className="checkbox-container">
+                  <input 
+                    type="checkbox" 
+                    checked={placementPriority} 
+                    onChange={(e) => setPlacementPriority(e.target.checked)}
+                  />
+                  <span className="checkmark"></span>
+                  High Placement Packages Priority
+                </label>
+              </div>
 
-                <div className="profile-buttons-row">
-                  <button type="submit" className="btn btn-primary w-full" disabled={profileSaving}>
-                    {profileSaving ? 'Saving...' : 'Save Profile & Run Predictor'}
-                    <ArrowRight size={16} />
+              {profileMsg && <p className="profile-msg">{profileMsg}</p>}
+
+              <div className="profile-buttons-row">
+                <button type="submit" className="btn btn-primary w-full" disabled={profileSaving}>
+                  {profileSaving ? 'Saving...' : 'Save Profile & Run Predictor'}
+                  <ArrowRight size={16} />
+                </button>
+                
+                {user?.profile_data && (
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary logout-btn-text" 
+                    onClick={() => {
+                      localStorage.removeItem('user');
+                      setUser(null);
+                      setPercentile('');
+                      setRank('');
+                      setSelectedBranches([]);
+                      setPreferredDistricts([]);
+                      setProfileMsg('Profile reset successfully.');
+                    }}
+                  >
+                    Reset Profile Data
                   </button>
-                  
-                  <button type="button" className="btn btn-secondary logout-btn-text" onClick={handleLogout}>
-                    Logout Profile
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
+                )}
+              </div>
+            </form>
+          </div>
         </div>
       </div>
 
