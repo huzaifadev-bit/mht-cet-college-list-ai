@@ -818,6 +818,11 @@ export default function AdminDashboard() {
             grid-template-columns: 1fr;
           }
         }
+        @media (max-width: 600px) {
+          .analytics-grid {
+            grid-template-columns: 1fr;
+          }
+        }
       `}</style>
     </div>
   );
