@@ -13,7 +13,8 @@ from .models import College, Branch, Cutoff, VacancySeat, Student, PreferenceLis
 from .schemas import (
     UserRegister, UserLogin, Token, UserOut, StudentProfile, PredictionRequest, PredictionResult,
     CollegeOut, BranchOut, PreferenceListCreate, PreferenceListOut, PreferenceReviewResponse,
-    CompareRequest, ChatRequest, ChatResponse, UploadedDocumentOut
+    CompareRequest, ChatRequest, ChatResponse, UploadedDocumentOut,
+    PreferenceReviewStatelessRequest, ExportStatelessRequest
 )
 from .auth import hash_password, verify_password, create_access_token, get_current_user, get_current_admin
 from .pdf_parser import MHTCETPDFParser
@@ -557,3 +558,61 @@ def reset_database(current_admin: Student = Depends(get_current_admin), db: Sess
     db.commit()
     
     return {"status": "success", "message": "Database wiped successfully. Ready for full upload re-indexing."}
+
+# --- STATELESS PUBLIC ENDPOINTS ---
+@app.post("/api/preferences/review-stateless", response_model=PreferenceReviewResponse)
+def review_preferences_stateless(req: PreferenceReviewStatelessRequest, db: Session = Depends(get_db)):
+    pred_service = PredictionService(db, gemini_api_key=os.getenv("GEMINI_API_KEY"))
+    
+    # Map preferences to tuples of (college_code, branch_code)
+    pref_tuples = [(item.college_code, item.branch_code) for item in req.preferences]
+    
+    review = pred_service.review_preference_list(
+        student_percentile=req.percentile,
+        student_rank=req.rank,
+        category=req.category,
+        gender=req.gender,
+        home_university=req.home_university,
+        preferences=pref_tuples
+    )
+    
+    risky = [
+        f"{item['college_name']} ({item['branch_name']})"
+        for item in review["evaluated_items"]
+        if item["status"] == "Dream"
+    ]
+    
+    return PreferenceReviewResponse(
+        has_warnings=len(review["warnings"]) > 0,
+        warnings=review["warnings"],
+        risky_choices=risky,
+        missing_recommendations=review["suggested_colleges"],
+        overall_score=review["overall_score"]
+    )
+
+@app.post("/api/preferences/download/pdf-stateless")
+def download_pdf_stateless(req: ExportStatelessRequest):
+    # Evaluate items
+    evaluated_items = [item.dict() for item in req.preferences]
+    
+    pdf_buffer = DocumentGenerator.generate_preference_pdf(req.student_info, evaluated_items)
+    
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=CAP_Preference_Form.pdf"}
+    )
+
+@app.post("/api/preferences/download/excel-stateless")
+def download_excel_stateless(req: ExportStatelessRequest):
+    # Evaluate items
+    evaluated_items = [item.dict() for item in req.preferences]
+    
+    excel_buffer = DocumentGenerator.generate_preference_excel(req.student_info, evaluated_items)
+    
+    return StreamingResponse(
+        excel_buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=CAP_Preference_Form.xlsx"}
+    )
+
