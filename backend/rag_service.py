@@ -1,4 +1,6 @@
 import os
+import ssl
+import httpx
 import chromadb
 from chromadb.config import Settings
 from typing import List, Dict, Any, Tuple, Optional
@@ -9,6 +11,19 @@ from pypdf import PdfReader
 
 from .models import College, Cutoff, AcademicYear, Branch
 
+# Bypass SSL verification for corporate/proxy networks
+def _make_gemini_client(api_key: str):
+    """Creates a Gemini client with SSL verification disabled for corporate proxy environments."""
+    try:
+        custom_client = httpx.Client(verify=False)
+        return genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(httpx_client=custom_client)
+        )
+    except Exception:
+        # Fallback: standard client
+        return genai.Client(api_key=api_key)
+
 class RAGService:
     def __init__(self, db: Session, gemini_api_key: Optional[str] = None):
         self.db = db
@@ -17,7 +32,7 @@ class RAGService:
         # Initialize Gemini Client if key exists
         self.client = None
         if self.api_key:
-            self.client = genai.Client(api_key=self.api_key)
+            self.client = _make_gemini_client(self.api_key)
             
         # Initialize ChromaDB client (local persistent storage)
         persist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "chroma_db")
@@ -31,15 +46,20 @@ class RAGService:
         )
 
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """Generates embeddings using Gemini API (or falls back to mock embeddings if API key not available)."""
+        """Generates embeddings using Gemini API in batches of 100 (or falls back to mock embeddings)."""
         if self.client and self.api_key:
             try:
-                response = self.client.models.embed_content(
-                    model="text-embedding-004",
-                    contents=texts
-                )
-                # Parse embeddings response
-                return [embedding.values for embedding in response.embeddings]
+                embeddings = []
+                batch_size = 100
+                for i in range(0, len(texts), batch_size):
+                    batch = texts[i:i + batch_size]
+                    response = self.client.models.embed_content(
+                        model="text-embedding-004",
+                        contents=batch
+                    )
+                    # Parse embeddings response
+                    embeddings.extend([embedding.values for embedding in response.embeddings])
+                return embeddings
             except Exception as e:
                 print(f"Error calling Gemini Embedding API: {e}")
                 
