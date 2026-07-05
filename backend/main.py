@@ -66,6 +66,10 @@ def process_pdf_background(
         elif file_type == "vacancy":
             recs = parser.parse_vacancy_pdf(file_path, academic_year, cap_round or 1)
             doc.error_message = f"Successfully parsed {recs} vacancy records."
+        elif file_type == "seat_matrix":
+            # Parse structured seat data into SQL DB (College, Branch, CollegeBranch)
+            recs = parser.parse_seat_matrix_pdf(file_path, academic_year)
+            doc.error_message = f"Successfully parsed {recs} college-branch seat records."
         else:
             # Unstructured PDFs: fees, placement, hostel, etc.
             success, msg = parser.extract_unstructured_pdf_data(file_path, academic_year)
