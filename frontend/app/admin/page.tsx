@@ -40,6 +40,57 @@ export default function AdminDashboard() {
   const [token, setToken] = useState<string | null>(null);
   const [adminUser, setAdminUser] = useState<any>(null);
   const [error, setError] = useState('');
+
+  // Admin login states
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  const handleAdminLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    setLoginLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          username: adminEmail,
+          password: adminPassword
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        localStorage.setItem('token', data.access_token);
+        
+        // Fetch user profile
+        const userRes = await fetch(`${API_BASE_URL}/api/auth/me`, {
+          headers: { 'Authorization': `Bearer ${data.access_token}` }
+        });
+        const userData = await userRes.json();
+        
+        if (userData.is_admin) {
+          localStorage.setItem('user', JSON.stringify(userData));
+          setToken(data.access_token);
+          setAdminUser(userData);
+          fetchAnalytics(data.access_token);
+          fetchDocuments(data.access_token);
+          setError('');
+          window.location.reload(); // Reload to populate polling and layout triggers
+        } else {
+          localStorage.removeItem('token');
+          setLoginError('Access Denied. Admin privileges required.');
+        }
+      } else {
+        setLoginError(data.detail || 'Invalid admin credentials.');
+      }
+    } catch (err: any) {
+      setLoginError('Error logging in.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
   
   // Analytics
   const [analytics, setAnalytics] = useState<Analytics>({
@@ -218,7 +269,42 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {error ? (
+      {!token ? (
+        <div className="error-card glass-panel" style={{ maxWidth: '400px', margin: '40px auto', textAlign: 'left' }}>
+          <h2 style={{ fontSize: '1.4rem', marginBottom: '8px', fontWeight: 'bold' }}>Admin Login Portal</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
+            Enter administrator credentials to access the data index control panel.
+          </p>
+          <form onSubmit={handleAdminLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <label className="form-label">Email Address</label>
+              <input 
+                type="email" 
+                className="form-input" 
+                placeholder="admin@example.com" 
+                value={adminEmail} 
+                onChange={e => setAdminEmail(e.target.value)} 
+                required 
+              />
+            </div>
+            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <label className="form-label">Password</label>
+              <input 
+                type="password" 
+                className="form-input" 
+                placeholder="••••••••" 
+                value={adminPassword} 
+                onChange={e => setAdminPassword(e.target.value)} 
+                required 
+              />
+            </div>
+            {loginError && <p className="auth-error-msg" style={{ color: 'var(--error-color)', fontSize: '0.85rem', margin: 0 }}>{loginError}</p>}
+            <button type="submit" className="btn btn-primary w-full" disabled={loginLoading} style={{ marginTop: '10px' }}>
+              {loginLoading ? 'Verifying...' : 'Login as Admin'}
+            </button>
+          </form>
+        </div>
+      ) : error ? (
         <div className="error-card glass-panel">
           <XCircle size={32} className="error-icon" />
           <p>{error}</p>
