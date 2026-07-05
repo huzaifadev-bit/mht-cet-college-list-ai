@@ -205,3 +205,29 @@ class UploadedDocumentOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+# Stateless Requests
+class PreferenceReviewStatelessRequest(BaseModel):
+    percentile: float
+    rank: int
+    category: str
+    gender: str
+    home_university: str
+    preferences: List[PreferenceItemCreate]
+
+class EvaluatedItemInput(BaseModel):
+    preference_order: int
+    college_code: int
+    college_name: str
+    branch_code: str
+    branch_name: str
+    fees: Optional[int] = 0
+    autonomous: bool = False
+    average_package: Optional[float] = 0.0
+    highest_package: Optional[float] = 0.0
+    probability: float
+    status: str
+
+class ExportStatelessRequest(BaseModel):
+    student_info: Dict[str, Any]
+    preferences: List[EvaluatedItemInput]
