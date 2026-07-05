@@ -89,8 +89,8 @@ class MHTCETPDFParser:
         records_added = 0
         
         # Regex definitions
-        college_header_re = re.compile(r"^(\d{4})\s*-\s*(.+)$")
-        course_header_re = re.compile(r"^(\d{9})\s*-\s*(.+)$")
+        college_header_re = re.compile(r"^(\d{4,5})\s*-\s*(.+)$")
+        course_header_re = re.compile(r"^(\d{9,10})\s*-\s*(.+)$")
         
         with pdfplumber.open(file_path) as pdf:
             for page_num, page in enumerate(pdf.pages):
@@ -142,7 +142,7 @@ class MHTCETPDFParser:
                         branch_name = course_match.group(2).strip()
                         
                         # The last 5 digits of the choice code represent branch/shift
-                        current_branch_code = full_choice_code[4:] # e.g. 19110
+                        current_branch_code = full_choice_code[-5:] # e.g. 19110
                         current_branch_name = branch_name
                         
                         # Check branch
@@ -284,8 +284,8 @@ class MHTCETPDFParser:
         ac_year = self.get_or_create_academic_year(academic_year_str)
         records_added = 0
         
-        college_header_re = re.compile(r"^(\d{4})\s*-\s*(.+)$")
-        course_header_re = re.compile(r"^(\d{9})\s*-\s*(.+)$")
+        college_header_re = re.compile(r"^(\d{4,5})\s*-\s*(.+)$")
+        course_header_re = re.compile(r"^(\d{9,10})\s*-\s*(.+)$")
         
         with pdfplumber.open(file_path) as pdf:
             for page in pdf.pages:
@@ -306,7 +306,7 @@ class MHTCETPDFParser:
                         continue
                     course_match = course_header_re.match(line)
                     if course_match:
-                        current_branch_code = course_match.group(1)[4:]
+                        current_branch_code = course_match.group(1)[-5:]
                         continue
                 
                 tables = page.extract_tables()
