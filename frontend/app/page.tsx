@@ -837,6 +837,17 @@ export default function LandingPage() {
             grid-template-columns: 1fr;
           }
         }
+        @media (max-width: 768px) {
+          .profile-form {
+            max-height: none;
+            overflow-y: visible;
+            padding-right: 0;
+          }
+          .form-row-2 {
+            grid-template-columns: 1fr;
+            gap: 12px;
+          }
+        }
       `}</style>
     </div>
   );
