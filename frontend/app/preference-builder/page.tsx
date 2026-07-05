@@ -74,89 +74,39 @@ export default function PreferenceBuilderPage() {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
-    if (savedToken && savedUser) {
-      setToken(savedToken);
+    if (savedUser) {
       try {
         const u = JSON.parse(savedUser);
-        setProfile(u.profile_data);
-        fetchPreferenceList(savedToken);
+        if (u.profile_data) {
+          setProfile(u.profile_data);
+          
+          // Load active preferences locally from localStorage
+          const localPrefs = localStorage.getItem('cap_preferences');
+          if (localPrefs) {
+            const parsed = JSON.parse(localPrefs);
+            parsed.sort((a: any, b: any) => a.preference_order - b.preference_order);
+            setPreferences(parsed);
+          } else {
+            setPreferences([]);
+          }
+        } else {
+          setError('Please configure your scores and preferences on the home page first.');
+        }
       } catch (e) {
-        setError('Error reading user session.');
+        setError('Error reading student profile.');
       }
     } else {
-      setError('Please login to build your preference list.');
+      setError('Please configure your scores and preferences on the home page first.');
     }
   }, []);
 
-  const fetchPreferenceList = async (authToken: string) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/preferences/active`, {
-        headers: { 'Authorization': `Bearer ${authToken}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setListName(data.name || 'My CAP Preference List');
-        // Sort items by preference_order
-        const items = data.items || [];
-        items.sort((a: any, b: any) => a.preference_order - b.preference_order);
-        
-        // Let's populate local probabilities if not present
-        const processedItems = await Promise.all(items.map(async (item: any) => {
-          let prob = item.admission_probability;
-          // Calculate probability dynamically if needed
-          return {
-            id: item.id,
-            college: item.college,
-            branch: item.branch,
-            preference_order: item.preference_order,
-            locked: item.locked,
-            admission_probability: prob
-          };
-        }));
-        
-        setPreferences(processedItems);
-      } else {
-        throw new Error('Failed to load preferences.');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Error fetching preference list.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const savePreferenceList = async (itemsList: PreferenceItem[]) => {
-    if (!token) return;
     try {
-      const payload = {
-        name: listName,
-        items: itemsList.map((item, idx) => ({
-          college_code: item.college.code,
-          branch_code: item.branch.code,
-          preference_order: idx + 1,
-          locked: item.locked
-        }))
-      };
-      
-      const res = await fetch(`${API_BASE_URL}/api/preferences`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        // Reload list to get resolved probability and fresh IDs
-        fetchPreferenceList(token);
-        // Clear old review
-        setReview(null);
-      }
+      localStorage.setItem('cap_preferences', JSON.stringify(itemsList));
+      setReview(null);
     } catch (e) {
-      console.log('Error saving preferences:', e);
+      console.log('Error saving preferences locally:', e);
     }
   };
 
@@ -203,16 +153,28 @@ export default function PreferenceBuilderPage() {
 
   // Run AI preference review
   const runAIReview = async () => {
-    if (!token) return;
+    if (!profile) return;
     setReviewLoading(true);
     setReview(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/preferences/review`, {
+      const res = await fetch(`${API_BASE_URL}/api/preferences/review-stateless`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          percentile: profile.percentile,
+          rank: profile.rank,
+          category: profile.category,
+          gender: profile.gender,
+          home_university: profile.home_university,
+          preferences: preferences.map(p => ({
+            college_code: p.college.code,
+            branch_code: p.branch.code,
+            preference_order: p.preference_order,
+            locked: p.locked
+          }))
+        })
       });
       const data = await res.json();
       if (res.ok) {
@@ -356,6 +318,58 @@ export default function PreferenceBuilderPage() {
     window.print();
   };
 
+  const downloadReport = async (format: 'pdf' | 'excel') => {
+    if (!profile || preferences.length === 0) return;
+    try {
+      const payload = {
+        student_info: {
+          name: profile.name || "Student Candidate",
+          percentile: profile.percentile,
+          rank: profile.rank,
+          category: profile.category,
+          gender: profile.gender,
+          home_university: profile.home_university
+        },
+        preferences: preferences.map(p => ({
+          preference_order: p.preference_order,
+          college_code: p.college.code,
+          college_name: p.college.name,
+          branch_code: p.branch.code,
+          branch_name: p.branch.name,
+          fees: p.college.fees || 0,
+          autonomous: p.college.autonomous || false,
+          average_package: p.college.average_package || 0.0,
+          highest_package: p.college.highest_package || 0.0,
+          probability: p.admission_probability || 0.0,
+          status: p.admission_probability >= 95.0 ? "Safe" : p.admission_probability >= 75.0 ? "High Chance" : p.admission_probability >= 50.0 ? "Moderate Chance" : "Dream"
+        }))
+      };
+
+      const res = await fetch(`${API_BASE_URL}/api/preferences/download/${format}-stateless`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error('Download failed');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `CAP_Preference_List.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.log('Error downloading report:', e);
+      alert('Failed to generate and download report.');
+    }
+  };
+
   return (
     <div className="pref-builder-workspace animate-fade-in">
       <div className="page-header print-hide">
@@ -372,27 +386,23 @@ export default function PreferenceBuilderPage() {
             <Printer size={16} /> Print Friendly
           </button>
           
-          {token && (
+          {preferences.length > 0 && (
             <>
-              <a 
-                href={`${API_BASE_URL}/api/preferences/download/pdf`} 
-                target="_blank" 
-                rel="noreferrer" 
+              <button 
+                onClick={() => downloadReport('pdf')}
                 className="btn btn-primary"
-                style={{ padding: '10px 16px', fontSize: '0.85rem' }}
+                style={{ padding: '10px 16px', fontSize: '0.85rem', gap: '6px', display: 'flex', alignItems: 'center' }}
               >
                 <Download size={16} /> Export PDF
-              </a>
+              </button>
               
-              <a 
-                href={`${API_BASE_URL}/api/preferences/download/excel`} 
-                target="_blank" 
-                rel="noreferrer" 
+              <button 
+                onClick={() => downloadReport('excel')}
                 className="btn btn-secondary"
-                style={{ padding: '10px 16px', fontSize: '0.85rem' }}
+                style={{ padding: '10px 16px', fontSize: '0.85rem', gap: '6px', display: 'flex', alignItems: 'center' }}
               >
                 <FileText size={16} /> Export Excel
-              </a>
+              </button>
             </>
           )}
         </div>
