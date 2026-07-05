@@ -1127,6 +1127,24 @@ export default function PreferenceBuilderPage() {
             grid-template-columns: 1fr;
           }
         }
+        @media (max-width: 768px) {
+          .page-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 15px;
+          }
+          .actions-row {
+            width: 100%;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+          .actions-row button, .actions-row a {
+            flex: 1;
+            min-width: 125px;
+            justify-content: center;
+          }
+        }
       `}</style>
     </div>
   );
