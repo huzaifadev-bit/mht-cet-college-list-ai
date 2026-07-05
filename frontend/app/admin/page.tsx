@@ -377,6 +377,7 @@ export default function AdminDashboard() {
                       onChange={(e) => setFileType(e.target.value)}
                     >
                       <option value="cutoff">Official CAP Round Cutoffs</option>
+                      <option value="seat_matrix">Official Seat Matrix (Intake per College)</option>
                       <option value="vacancy">Official Seat Vacancy Chart</option>
                       <option value="fee">Tuition Fee Structure brochure</option>
                       <option value="placement">Placements Report slide/PDF</option>
