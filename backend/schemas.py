@@ -55,16 +55,16 @@ class StudentProfile(BaseModel):
 
 class PredictionRequest(BaseModel):
     percentile: float
-    rank: int
+    rank: Optional[int] = None
     category: str
     gender: str
-    home_university: str
-    candidature_type: str
+    home_university: Optional[str] = ""
+    candidature_type: Optional[str] = "Type A"
     tfws_status: bool = False
     defence_status: bool = False
     ph_status: bool = False
     minority_status: Optional[str] = None
-    preferred_branches: List[str]
+    preferred_branches: Optional[List[str]] = []
     preferred_districts: Optional[List[str]] = None
     max_fees: Optional[int] = None
     gov_private_pref: Optional[str] = "ANY"
