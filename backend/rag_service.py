@@ -36,8 +36,20 @@ class RAGService:
             
         # Initialize ChromaDB client (local persistent storage)
         persist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "chroma_db")
-        os.makedirs(persist_dir, exist_ok=True)
         
+        # Fallback to /tmp if running on Vercel (read-only filesystem)
+        if os.getenv("VERCEL") or not os.access(os.path.dirname(persist_dir) or ".", os.W_OK):
+            import shutil
+            tmp_dir = "/tmp/chroma_db"
+            if not os.path.exists(tmp_dir):
+                if os.path.exists(persist_dir):
+                    shutil.copytree(persist_dir, tmp_dir, dirs_exist_ok=True)
+                else:
+                    os.makedirs(tmp_dir, exist_ok=True)
+            persist_dir = tmp_dir
+        else:
+            os.makedirs(persist_dir, exist_ok=True)
+            
         self.chroma_client = chromadb.PersistentClient(path=persist_dir)
         # Create or get collection
         self.collection = self.chroma_client.get_or_create_collection(
