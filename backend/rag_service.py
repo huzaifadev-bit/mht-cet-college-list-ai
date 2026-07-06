@@ -81,7 +81,7 @@ class RAGService:
                 for i in range(0, len(texts), batch_size):
                     batch = texts[i:i + batch_size]
                     response = self.client.models.embed_content(
-                        model="text-embedding-004",
+                        model="gemini-embedding-001",
                         contents=batch
                     )
                     # Parse embeddings response
@@ -90,11 +90,11 @@ class RAGService:
             except Exception as e:
                 print(f"Error calling Gemini Embedding API: {e}")
                 
-        # Simple local fallback/mock embeddings for development/testing if API key not set
-        # Return a list of pseudo-random floats of length 768
+        # Simple local fallback/mock embeddings
         import random
         random.seed(42)
         return [[random.uniform(-1, 1) for _ in range(768)] for _ in texts]
+
 
     def add_pdf_to_vector_db(self, file_path: str, document_id: int, filename: str) -> int:
         """Chunks PDF text and indexes it in ChromaDB."""
@@ -295,4 +295,9 @@ class RAGService:
             return response.text, sources
             
         except Exception as e:
-            return f"Error executing AI RAG Chat: {str(e)}", []
+            err_msg = str(e)
+            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                return ("The AI chatbot is currently receiving too many requests. "
+                        "Please wait a few seconds and try sending your message again!"), []
+            return f"Error executing AI RAG Chat: {err_msg}", []
+
