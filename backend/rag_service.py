@@ -1,8 +1,13 @@
 import os
 import ssl
 import httpx
-import chromadb
-from chromadb.config import Settings
+try:
+    import chromadb
+    from chromadb.config import Settings
+    HAS_CHROMA = True
+except ImportError:
+    HAS_CHROMA = False
+
 from typing import List, Dict, Any, Tuple, Optional
 from google import genai
 from google.genai import types
@@ -34,28 +39,38 @@ class RAGService:
         if self.api_key:
             self.client = _make_gemini_client(self.api_key)
             
-        # Initialize ChromaDB client (local persistent storage)
-        persist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "chroma_db")
+        # Initialize ChromaDB client if available
+        self.chroma_client = None
+        self.collection = None
         
-        # Fallback to /tmp if running on Vercel (read-only filesystem)
-        if os.getenv("VERCEL") or not os.access(os.path.dirname(persist_dir) or ".", os.W_OK):
-            import shutil
-            tmp_dir = "/tmp/chroma_db"
-            if not os.path.exists(tmp_dir):
-                if os.path.exists(persist_dir):
-                    shutil.copytree(persist_dir, tmp_dir, dirs_exist_ok=True)
+        if HAS_CHROMA:
+            try:
+                persist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "chroma_db")
+                # Fallback to /tmp if running on Vercel (read-only filesystem)
+                if os.getenv("VERCEL") or not os.access(os.path.dirname(persist_dir) or ".", os.W_OK):
+                    import shutil
+                    tmp_dir = "/tmp/chroma_db"
+                    if not os.path.exists(tmp_dir):
+                        if os.path.exists(persist_dir):
+                            shutil.copytree(persist_dir, tmp_dir, dirs_exist_ok=True)
+                        else:
+                            os.makedirs(tmp_dir, exist_ok=True)
+                    persist_dir = tmp_dir
                 else:
-                    os.makedirs(tmp_dir, exist_ok=True)
-            persist_dir = tmp_dir
+                    os.makedirs(persist_dir, exist_ok=True)
+                    
+                self.chroma_client = chromadb.PersistentClient(path=persist_dir)
+                self.collection = self.chroma_client.get_or_create_collection(
+                    name="mht_cet_documents",
+                    metadata={"hnsw:space": "cosine"}
+                )
+            except Exception as e:
+                print(f"Warning: Could not initialize ChromaDB Persistent Client: {e}")
+                self.chroma_client = None
+                self.collection = None
         else:
-            os.makedirs(persist_dir, exist_ok=True)
-            
-        self.chroma_client = chromadb.PersistentClient(path=persist_dir)
-        # Create or get collection
-        self.collection = self.chroma_client.get_or_create_collection(
-            name="mht_cet_documents",
-            metadata={"hnsw:space": "cosine"}
-        )
+            print("ChromaDB is not installed. PDF semantic search is disabled. Operating in SQL-only mode.")
+
 
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generates embeddings using Gemini API in batches of 100 (or falls back to mock embeddings)."""
@@ -117,6 +132,10 @@ class RAGService:
         if not chunks:
             return 0
             
+        if not self.collection:
+            print("Cannot add to vector db: ChromaDB not initialized.")
+            return 0
+            
         # Generate embeddings and add to collection
         embeddings = self.generate_embeddings(chunks)
         self.collection.add(
@@ -129,6 +148,8 @@ class RAGService:
 
     def delete_document_chunks(self, document_id: int):
         """Deletes all vector chunks associated with a document ID."""
+        if not self.collection:
+            return
         # Query items first
         try:
             self.collection.delete(
@@ -139,11 +160,14 @@ class RAGService:
 
     def query_documents(self, query_text: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Queries ChromaDB using cosine similarity."""
+        if not self.collection:
+            return []
         query_embeddings = self.generate_embeddings([query_text])
         results = self.collection.query(
             query_embeddings=query_embeddings,
             n_results=limit
         )
+
         
         formatted_results = []
         if results and results["documents"]:
