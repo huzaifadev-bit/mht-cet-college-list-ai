@@ -1,52 +1,69 @@
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
 load_dotenv()
-if not os.getenv("GEMINI_API_KEY"):
-    # Fallback to the .env file next to database.py
+if not os.getenv("DATABASE_URL"):
     load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if DATABASE_URL:
-    # Use pg8000 pure-python driver for PostgreSQL (works on Vercel/Render without libpq)
-    if DATABASE_URL.startswith("postgresql://"):
-        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
-    elif DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+pg8000://", 1)
-else:
-    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "mhtcet.db"))
-    DATABASE_URL = f"sqlite:///{db_path}"
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# Build engine kwargs based on database type
-is_sqlite = DATABASE_URL.startswith("sqlite")
-
-engine_kwargs = {"pool_pre_ping": True}
-if not is_sqlite:
-    # pg8000 works better with smaller pools and explicit SSL
-    engine_kwargs["pool_size"] = 5
-    engine_kwargs["max_overflow"] = 10
-    engine_kwargs["connect_args"] = {"ssl_context": True}
-
-try:
-    engine = create_engine(DATABASE_URL, **engine_kwargs)
-except Exception as e:
-    print(f"WARNING: Could not create engine with SSL, retrying without: {e}")
-    engine_kwargs.pop("connect_args", None)
-    engine = create_engine(DATABASE_URL, **engine_kwargs)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Normalize postgres:// -> postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 Base = declarative_base()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+def _build_engine():
+    """Build SQLAlchemy engine - try multiple connection strategies."""
+    if not DATABASE_URL or DATABASE_URL.startswith("sqlite"):
+        if not DATABASE_URL:
+            db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "mhtcet.db"))
+            url = f"sqlite:///{db_path}"
+        else:
+            url = DATABASE_URL
+        print(f"[DB] Using SQLite")
+        return create_engine(url, pool_pre_ping=True)
+
+    # PostgreSQL: convert to pg8000 driver
+    pg_url = DATABASE_URL
+    if not pg_url.startswith("postgresql+pg8000://"):
+        pg_url = pg_url.replace("postgresql://", "postgresql+pg8000://", 1)
+
+    strategies = [
+        # 1. psycopg2 (best on Linux Render/Heroku servers - has libpq built-in)
+        (DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1) if "pg8000" not in DATABASE_URL else DATABASE_URL.replace("pg8000://", "psycopg2://", 1),
+         {"pool_pre_ping": True, "pool_size": 3, "max_overflow": 5}),
+        # 2. pg8000 with SSL (works locally and most cloud - Supabase requires SSL)
+        (pg_url, {"pool_pre_ping": True, "pool_size": 3, "max_overflow": 5,
+                  "connect_args": {"ssl_context": True}}),
+        # 3. pg8000 without SSL args
+        (pg_url, {"pool_pre_ping": True, "pool_size": 3, "max_overflow": 5}),
+        # 4. Minimal fallback
+        (pg_url, {}),
+    ]
+
+    last_err = None
+    for url, kwargs in strategies:
+        try:
+            eng = create_engine(url, **kwargs)
+            with eng.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            host = url.split("@")[-1] if "@" in url else url
+            print(f"[DB] Connected: {host}")
+            return eng
+        except Exception as e:
+            last_err = e
+            print(f"[DB] Strategy failed ({list(kwargs.keys())}): {str(e)[:80]}")
+
+    print(f"[DB] All strategies failed. App will start but DB ops will error.")
+    # Return engine anyway so app doesn't crash
+    return create_engine(pg_url, pool_pre_ping=True)
+
+engine = _build_engine()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def get_db():
@@ -55,3 +72,4 @@ def get_db():
         yield db
     finally:
         db.close()
+
