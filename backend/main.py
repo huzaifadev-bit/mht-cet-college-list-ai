@@ -30,6 +30,23 @@ except Exception as e:
 
 app = FastAPI(title="MHT CET AI College Predictor API", version="1.0.0")
 
+# Health check + DB debug endpoint
+@app.get("/health")
+def health_check():
+    import os
+    db_url = os.getenv("DATABASE_URL", "NOT SET")
+    # Mask password
+    import re
+    masked = re.sub(r':[^@]+@', ':***@', db_url) if db_url else "NOT SET"
+    try:
+        from sqlalchemy import text
+        from .database import engine
+        with engine.connect() as conn:
+            count = conn.execute(text("SELECT COUNT(*) FROM colleges")).scalar()
+        return {"status": "ok", "db": masked, "colleges": count}
+    except Exception as e:
+        return {"status": "db_error", "db": masked, "error": str(e)[:300]}
+
 # CORS middleware for Next.js communication
 app.add_middleware(
     CORSMiddleware,
