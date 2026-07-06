@@ -1,16 +1,16 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from decimal import Decimal
 
 # Authentication
 class UserRegister(BaseModel):
-    email: EmailStr
+    email: str
     password: str
     name: str
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 class Token(BaseModel):
@@ -19,7 +19,7 @@ class Token(BaseModel):
 
 class UserOut(BaseModel):
     id: int
-    email: EmailStr
+    email: str
     name: str
     is_admin: bool
     profile_data: Optional[Dict[str, Any]] = None
@@ -136,7 +136,7 @@ class PredictionResult(BaseModel):
     cap_round: int
     seat_type: str
     admission_probability: float # 0 to 100
-    category_closing_percentiles: Dict[str, List[Dict[str, Any]]] # e.g. {"2023-24": [{"round": 1, "percentile": 98.2, "rank": 2043}], ...}
+    category_closing_percentiles: Dict[str, List[Dict[str, Any]]] # e.g. {"2023-24": [{"round": 1, "percentile": 98.2, "rank": 2043}], ...]}
     current_vacant_seats: Optional[int] = 0
     previous_vacant_seats: Optional[int] = 0
     explanation: str
