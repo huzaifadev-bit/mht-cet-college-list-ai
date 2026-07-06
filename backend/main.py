@@ -21,8 +21,12 @@ from .prediction_service import PredictionService
 # RAGService, MHTCETPDFParser, DocumentGenerator are imported lazily inside functions
 # to avoid startup crash if chromadb native extensions are unavailable
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Create tables (wrapped in try/except to prevent startup crash if DB is unreachable)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"WARNING: Could not create tables on startup: {e}")
+    print("Tables will be created on first successful DB connection.")
 
 app = FastAPI(title="MHT CET AI College Predictor API", version="1.0.0")
 
