@@ -10,7 +10,11 @@ if not os.getenv("GEMINI_API_KEY"):
     load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
+if DATABASE_URL:
+    # Use pg8000 pure-python driver for PostgreSQL
+    if DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
+else:
     db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "mhtcet.db"))
     DATABASE_URL = f"sqlite:///{db_path}"
 
