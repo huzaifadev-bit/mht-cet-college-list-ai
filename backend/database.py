@@ -9,7 +9,10 @@ if not os.getenv("GEMINI_API_KEY"):
     # Fallback to the .env file next to database.py
     load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+pg8000://postgres:postgres_password@localhost:5432/mht_cet_predictor")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "mhtcet.db"))
+    DATABASE_URL = f"sqlite:///{db_path}"
 
 engine = create_engine(
     DATABASE_URL,
