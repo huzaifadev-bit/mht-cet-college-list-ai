@@ -83,12 +83,16 @@ export default function ChatbotPage() {
         content: m.content
       }));
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        },
+        headers,
         body: JSON.stringify({
           message: text,
           chat_history
