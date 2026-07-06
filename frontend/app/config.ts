@@ -1,4 +1,5 @@
 // Production backend hosted on Railway (always online, no PC needed)
+// Updated: force Vercel redeploy
 const RAILWAY_BACKEND_URL = 'https://mhtcet-backend-production.up.railway.app';
 
 export const API_BASE_URL = typeof window !== 'undefined'
@@ -6,4 +7,3 @@ export const API_BASE_URL = typeof window !== 'undefined'
       ? 'http://localhost:8000'
       : RAILWAY_BACKEND_URL)
   : RAILWAY_BACKEND_URL;
-
