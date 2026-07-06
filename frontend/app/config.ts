@@ -6,3 +6,4 @@ export const API_BASE_URL = typeof window !== 'undefined'
       ? 'http://localhost:8000'
       : RENDER_BACKEND_URL)
   : RENDER_BACKEND_URL;
+
