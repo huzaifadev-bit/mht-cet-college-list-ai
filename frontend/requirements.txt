@@ -4,7 +4,6 @@ sqlalchemy
 pg8000
 pdfplumber
 pypdf
-chromadb
 google-genai
 python-dotenv
 pydantic
