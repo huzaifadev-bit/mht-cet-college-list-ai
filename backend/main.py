@@ -30,6 +30,11 @@ except Exception as e:
 
 app = FastAPI(title="MHT CET AI College Predictor API", version="1.0.0")
 
+@app.on_event("startup")
+def startup_event():
+    print("MHT-CET BACKEND STARTING UP - REFRESHED VERSION 1.0.1")
+
+
 # Health check + DB debug endpoint
 @app.get("/health")
 def health_check():
