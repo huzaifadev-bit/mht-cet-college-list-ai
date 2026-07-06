@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+sqlalchemy
+pg8000
+pdfplumber
+pypdf
+chromadb
+google-genai
+python-dotenv
+pydantic
+pydantic-settings
+python-multipart
+pyjwt
+openpyxl
+reportlab
+pytest
+email-validator
