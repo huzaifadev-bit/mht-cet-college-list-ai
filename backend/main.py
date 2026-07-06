@@ -38,14 +38,42 @@ def health_check():
     # Mask password
     import re
     masked = re.sub(r':[^@]+@', ':***@', db_url) if db_url else "NOT SET"
+    # Try to connect using psycopg2 manually to see error
+    errors = {}
     try:
-        from sqlalchemy import text
-        from .database import engine
-        with engine.connect() as conn:
+        from sqlalchemy import create_engine, text
+        # Strategy 1: psycopg2
+        url_psycopg2 = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        eng_p = create_engine(url_psycopg2)
+        with eng_p.connect() as conn:
             count = conn.execute(text("SELECT COUNT(*) FROM colleges")).scalar()
-        return {"status": "ok", "db": masked, "colleges": count}
+        return {"status": "ok", "driver": "psycopg2", "db": masked, "colleges": count}
     except Exception as e:
-        return {"status": "db_error", "db": masked, "error": str(e)[:300]}
+        errors["psycopg2"] = str(e)
+        
+    try:
+        from sqlalchemy import create_engine, text
+        # Strategy 2: pg8000
+        url_pg = db_url
+        if not url_pg.startswith("postgresql+pg8000://"):
+            url_pg = url_pg.replace("postgresql://", "postgresql+pg8000://", 1)
+        eng_g = create_engine(url_pg)
+        with eng_g.connect() as conn:
+            count = conn.execute(text("SELECT COUNT(*) FROM colleges")).scalar()
+        return {"status": "ok", "driver": "pg8000", "db": masked, "colleges": count}
+    except Exception as e:
+        errors["pg8000"] = str(e)
+
+    # Fallback to local SQLite if both cloud postgres strategies fail
+    try:
+        from sqlalchemy import create_engine, text
+        db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "mhtcet.db"))
+        eng_sqlite = create_engine(f"sqlite:///{db_path}")
+        with eng_sqlite.connect() as conn:
+            count = conn.execute(text("SELECT COUNT(*) FROM colleges")).scalar()
+        return {"status": "fallback_sqlite", "db": "sqlite", "colleges": count, "errors": errors}
+    except Exception as e:
+        return {"status": "db_error", "db": masked, "error": str(e), "errors": errors}
 
 # CORS middleware for Next.js communication
 app.add_middleware(
