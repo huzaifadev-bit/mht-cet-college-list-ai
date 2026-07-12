@@ -73,6 +73,7 @@ export default function PredictorPage() {
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedDistricts, setSelectedDistricts] = useState<string[]>([]);
   const [govPref, setGovPref]       = useState('ANY');
+  const [minority, setMinority]     = useState('None');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Results state
@@ -131,7 +132,7 @@ export default function PredictorPage() {
           tfws_status: category === 'TFWS',
           defence_status: category === 'DEF',
           ph_status: false,
-          minority_status: 'None',
+          minority_status: minority,
           preferred_branches: selectedBranches,
           preferred_districts: selectedDistricts,
           max_fees: null,
@@ -360,6 +361,14 @@ export default function PredictorPage() {
                 <option value="ANY">Any Type</option>
                 <option value="GOVT">Government / Aided Only</option>
                 <option value="PVT">Private Colleges Only</option>
+              </select>
+            </div>
+            <div className="form-field">
+              <label>Minority Status</label>
+              <select value={minority} onChange={e => setMinority(e.target.value)} className="sel-input">
+                <option value="None">None (General)</option>
+                <option value="Linguistic">Linguistic Minority</option>
+                <option value="Religious">Religious Minority</option>
               </select>
             </div>
           </div>
