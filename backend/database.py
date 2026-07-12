@@ -64,9 +64,9 @@ def _build_engine():
             last_err = e
             print(f"[DB] Strategy failed ({list(kwargs.keys())}): {str(e)[:80]}")
 
-    print(f"[DB] All strategies failed. App will start but DB ops will error.")
-    # Return engine anyway so app doesn't crash
-    return create_engine(pg_url, pool_pre_ping=True)
+    print(f"[DB] All strategies failed. Falling back to local SQLite database.")
+    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "mhtcet.db"))
+    return create_engine(f"sqlite:///{db_path}", pool_pre_ping=True)
 
 engine = _build_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
