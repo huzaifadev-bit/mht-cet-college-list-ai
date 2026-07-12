@@ -27,15 +27,21 @@ def _build_engine():
         print(f"[DB] Using SQLite")
         return create_engine(url, pool_pre_ping=True)
 
-    # PostgreSQL: convert to pg8000 driver
+    # PostgreSQL: set up both psycopg2 and pg8000 URLs
     pg_url = DATABASE_URL
-    if not pg_url.startswith("postgresql+pg8000://"):
+    if "postgresql" in pg_url and "pg8000" not in pg_url and "psycopg2" not in pg_url:
         pg_url = pg_url.replace("postgresql://", "postgresql+pg8000://", 1)
 
+    psycopg2_url = DATABASE_URL
+    if "postgresql" in psycopg2_url:
+        if "pg8000" in psycopg2_url:
+            psycopg2_url = psycopg2_url.replace("pg8000", "psycopg2", 1)
+        elif "psycopg2" not in psycopg2_url:
+            psycopg2_url = psycopg2_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
     strategies = [
-        # 1. psycopg2 (best on Linux Render/Heroku servers - has libpq built-in)
-        (DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1) if "pg8000" not in DATABASE_URL else DATABASE_URL.replace("pg8000://", "psycopg2://", 1),
-         {"pool_pre_ping": True, "pool_size": 3, "max_overflow": 5}),
+        # 1. psycopg2 (best on Linux cloud platforms - has libpq built-in)
+        (psycopg2_url, {"pool_pre_ping": True, "pool_size": 3, "max_overflow": 5}),
         # 2. pg8000 with SSL (works locally and most cloud - Supabase requires SSL)
         (pg_url, {"pool_pre_ping": True, "pool_size": 3, "max_overflow": 5,
                   "connect_args": {"ssl_context": True}}),
