@@ -214,6 +214,7 @@ class PreferenceReviewStatelessRequest(BaseModel):
     gender: str
     home_university: str
     preferences: List[PreferenceItemCreate]
+    minority_status: Optional[str] = None
 
 class EvaluatedItemInput(BaseModel):
     preference_order: int
