@@ -76,7 +76,22 @@ def health_check():
         eng_sqlite = create_engine(f"sqlite:///{db_path}")
         with eng_sqlite.connect() as conn:
             count = conn.execute(text("SELECT COUNT(*) FROM colleges")).scalar()
-        return {"status": "fallback_sqlite", "db": "sqlite", "colleges": count, "errors": errors}
+            districts = conn.execute(text("SELECT COUNT(*) FROM districts")).scalar()
+            universities = conn.execute(text("SELECT COUNT(*) FROM universities")).scalar()
+            cutoffs = conn.execute(text("SELECT COUNT(*) FROM cutoffs")).scalar()
+            vacancies = conn.execute(text("SELECT COUNT(*) FROM vacancy_seats")).scalar()
+            branches = conn.execute(text("SELECT COUNT(*) FROM branches")).scalar()
+        return {
+            "status": "fallback_sqlite",
+            "db": "sqlite",
+            "colleges": count,
+            "districts": districts,
+            "universities": universities,
+            "cutoffs": cutoffs,
+            "vacancies": vacancies,
+            "branches": branches,
+            "errors": errors
+        }
     except Exception as e:
         return {"status": "db_error", "db": masked, "error": str(e), "errors": errors}
 
