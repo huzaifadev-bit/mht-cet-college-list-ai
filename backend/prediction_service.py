@@ -35,7 +35,8 @@ class PredictionService:
         category: str,
         gender: str,
         home_university: str,
-        student_rank: Optional[int] = None
+        student_rank: Optional[int] = None,
+        minority_status: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Calculates the admission probability of a student getting a specific college branch.
@@ -77,6 +78,10 @@ class PredictionService:
                 f"{gender_prefix}OPENS",
                 f"GOPENS"
             ]
+
+        # Add minority quota seat type if student belongs to a minority
+        if minority_status and minority_status.lower() not in ["none", ""]:
+            seat_types.insert(0, "MI")
 
         # Fetch cutoff records for this category
         cutoffs_qs = self.db.query(Cutoff).join(AcademicYear).filter(
@@ -221,7 +226,8 @@ class PredictionService:
         category: str,
         gender: str,
         home_university: str,
-        preferences: List[Tuple[int, str]] # List of (college_code, branch_code)
+        preferences: List[Tuple[int, str]], # List of (college_code, branch_code)
+        minority_status: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Performs structural and AI analysis on a student's proposed preference list.
@@ -249,7 +255,8 @@ class PredictionService:
                 branch_code=br_code,
                 category=category,
                 gender=gender,
-                home_university=home_university
+                home_university=home_university,
+                minority_status=minority_status
             )
             
             college = self.db.query(College).filter(College.code == col_code).first()
