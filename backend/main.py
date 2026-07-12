@@ -257,7 +257,8 @@ def predict_colleges(req: PredictionRequest, db: Session = Depends(get_db)):
                 branch_code=br.code,
                 category=req.category,
                 gender=req.gender,
-                home_university=req.home_university
+                home_university=req.home_university,
+                minority_status=req.minority_status
             )
             
             status_bucket = pred["status"]
@@ -368,7 +369,8 @@ def review_preferences(current_user: Student = Depends(get_current_user), db: Se
         category=prof["category"],
         gender=prof["gender"],
         home_university=prof["home_university"],
-        preferences=pref_tuples
+        preferences=pref_tuples,
+        minority_status=prof.get("minority_status")
     )
     
     risky = [
@@ -405,7 +407,8 @@ def download_pdf(current_user: Student = Depends(get_current_user), db: Session 
             branch_code=item.branch_code,
             category=prof["category"],
             gender=prof["gender"],
-            home_university=prof["home_university"]
+            home_university=prof["home_university"],
+            minority_status=prof.get("minority_status")
         )
         evaluated_items.append({
             "preference_order": item.preference_order,
@@ -456,7 +459,8 @@ def download_excel(current_user: Student = Depends(get_current_user), db: Sessio
             branch_code=item.branch_code,
             category=prof["category"],
             gender=prof["gender"],
-            home_university=prof["home_university"]
+            home_university=prof["home_university"],
+            minority_status=prof.get("minority_status")
         )
         evaluated_items.append({
             "preference_order": item.preference_order,
@@ -632,13 +636,14 @@ def review_preferences_stateless(req: PreferenceReviewStatelessRequest, db: Sess
     pref_tuples = [(item.college_code, item.branch_code) for item in req.preferences]
     
     review = pred_service.review_preference_list(
-        student_percentile=req.percentile,
-        student_rank=req.rank,
-        category=req.category,
-        gender=req.gender,
-        home_university=req.home_university,
-        preferences=pref_tuples
-    )
+            student_percentile=req.percentile,
+            student_rank=req.rank,
+            category=req.category,
+            gender=req.gender,
+            home_university=req.home_university,
+            preferences=pref_tuples,
+            minority_status=req.minority_status
+        )
     
     risky = [
         f"{item['college_name']} ({item['branch_name']})"
