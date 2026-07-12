@@ -288,7 +288,7 @@ a {
 
 .form-row-main {
   display: grid;
-  grid-template-columns: 1.8fr 1.2fr 1fr 1.2fr;
+  grid-template-columns: 1.5fr 1.1fr 0.8fr 1.1fr 1.1fr;
   gap: 20px;
   align-items: end;
 }
