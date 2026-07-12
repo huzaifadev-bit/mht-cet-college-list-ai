@@ -104,6 +104,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.middleware("http")
+async def catch_exceptions_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"Unhandled Exception: {str(e)}\n{tb}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error", "error": str(e), "traceback": tb}
+        )
+
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
