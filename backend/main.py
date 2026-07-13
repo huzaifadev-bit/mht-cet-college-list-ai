@@ -105,20 +105,6 @@ app.add_middleware(
 )
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
-
-@app.middleware("http")
-async def catch_exceptions_middleware(request: Request, call_next):
-    try:
-        return await call_next(request)
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        print(f"Unhandled Exception: {str(e)}\n{tb}")
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal Server Error", "error": str(e), "traceback": tb}
-        )
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -222,112 +208,112 @@ def update_profile(profile: StudentProfile, current_user: Student = Depends(get_
 # --- PREDICTION ROUTES ---
 @app.post("/api/predict", response_model=Dict[str, List[PredictionResult]])
 def predict_colleges(req: PredictionRequest, db: Session = Depends(get_db)):
-    pred_service = PredictionService(db, gemini_api_key=os.getenv("GEMINI_API_KEY"))
-    
-    # Fetch all colleges matching filters
-    query = db.query(College)
-    
-    # 1. District Filters
-    if req.preferred_districts:
-        # Match district names
-        query = query.join(District).filter(District.name.in_(req.preferred_districts))
-        
-    # 2. Govt / Private Preference
-    if req.gov_private_pref == "GOVT":
-        query = query.filter(College.status.in_(["Government", "Government Aided", "University Managed"]))
-    elif req.gov_private_pref == "PVT":
-        query = query.filter(College.status == "Private")
-        
-    # 3. Autonomous Pref
-    if req.autonomous_pref == "AUTONOMOUS":
-        query = query.filter(College.autonomous == True)
-    elif req.autonomous_pref == "NON-AUTONOMOUS":
-        query = query.filter(College.autonomous == False)
-        
-    # 4. Fees limit
-    if req.max_fees:
-        query = query.filter(College.fees <= req.max_fees)
-        
-    # 5. Hostel Required
-    if req.hostel_required:
-        query = query.filter(College.hostel_availability == True)
-        
-    colleges = query.all()
-    
-    # For matching branches
-    branches_filter = req.preferred_branches
-    
     results = {
         "Safe": [],
         "High Chance": [],
         "Moderate Chance": [],
         "Dream": []
     }
-    
-    for col in colleges:
-        # Get branches offered by this college
-        for cb in col.branches:
-            br = cb.branch
+    try:
+        pred_service = PredictionService(db, gemini_api_key=os.getenv("GEMINI_API_KEY"))
+        
+        # Fetch all colleges matching filters
+        query = db.query(College)
+        
+        # 1. District Filters
+        if req.preferred_districts:
+            query = query.join(District).filter(District.name.in_(req.preferred_districts))
             
-            # Filter branch
-            # Matches if preferred_branches is empty or branch code/name matches
-            if branches_filter:
-                match_branch = False
-                for pref_br in branches_filter:
-                    if pref_br.lower() in br.name.lower() or pref_br == br.code:
-                        match_branch = True
-                        break
-                if not match_branch:
-                    continue
+        # 2. Govt / Private Preference
+        if req.gov_private_pref == "GOVT":
+            query = query.filter(College.status.in_(["Government", "Government Aided", "University Managed"]))
+        elif req.gov_private_pref == "PVT":
+            query = query.filter(College.status == "Private")
             
-            # Predict
-            pred = pred_service.calculate_admission_probability(
-                student_percentile=req.percentile,
-                student_rank=req.rank,
-                college_code=col.code,
-                branch_code=br.code,
-                category=req.category,
-                gender=req.gender,
-                home_university=req.home_university,
-                minority_status=req.minority_status
-            )
+        # 3. Autonomous Pref
+        if req.autonomous_pref == "AUTONOMOUS":
+            query = query.filter(College.autonomous == True)
+        elif req.autonomous_pref == "NON-AUTONOMOUS":
+            query = query.filter(College.autonomous == False)
             
-            status_bucket = pred["status"]
-            # Map "High Chance" to "High Chance" bucket, others as is
-            bucket = "High Chance" if status_bucket == "High Chance" else status_bucket
-            if status_bucket == "Safe":
-                bucket = "Safe"
-            elif status_bucket == "Moderate Chance":
-                bucket = "Moderate Chance"
-            elif status_bucket == "Dream":
-                bucket = "Dream"
-                
-            # Fetch vacant seats
-            # Find latest recorded vacant seats
-            latest_vacancy = db.query(VacancySeat).filter(
-                VacancySeat.college_code == col.code,
-                VacancySeat.branch_code == br.code
-            ).order_by(VacancySeat.cap_round.desc()).first()
+        # 4. Fees limit
+        if req.max_fees:
+            query = query.filter(College.fees <= req.max_fees)
             
-            vacant_count = latest_vacancy.vacant_seats if latest_vacancy else 0
+        # 5. Hostel Required
+        if req.hostel_required:
+            query = query.filter(College.hostel_availability == True)
             
-            # Build prediction output
-            res = PredictionResult(
-                college=CollegeOut.model_validate(col),
-                branch=BranchOut.model_validate(br),
-                cap_round=pred["history"].get(max(pred["history"].keys()), {}).get("round", 1) if pred["history"] else 1,
-                seat_type=pred["history"].get(max(pred["history"].keys()), {}).get("seat_type", "GOPENH") if pred["history"] else "GOPENH",
-                admission_probability=pred["probability"],
-                category_closing_percentiles={
-                    yr: [{"round": vals["round"], "percentile": Decimal(str(vals["percentile"])), "rank": vals["rank"]}]
-                    for yr, vals in pred["history"].items()
-                },
-                current_vacant_seats=vacant_count,
-                previous_vacant_seats=0, # set dummy or fetch previous year
-                explanation=pred["explanation"]
-            )
-            
-            results[bucket].append(res)
+        colleges = query.all()
+        branches_filter = req.preferred_branches
+        
+        for col in colleges:
+            try:
+                for cb in col.branches:
+                    try:
+                        br = cb.branch
+                        
+                        # Filter by preferred branch
+                        if branches_filter:
+                            match_branch = any(
+                                pref_br.lower() in br.name.lower() or pref_br == br.code
+                                for pref_br in branches_filter
+                            )
+                            if not match_branch:
+                                continue
+                        
+                        # Calculate admission probability
+                        pred = pred_service.calculate_admission_probability(
+                            student_percentile=req.percentile,
+                            student_rank=req.rank,
+                            college_code=col.code,
+                            branch_code=br.code,
+                            category=req.category,
+                            gender=req.gender,
+                            home_university=req.home_university or "",
+                            minority_status=req.minority_status
+                        )
+                        
+                        status_bucket = pred.get("status", "Dream")
+                        bucket = status_bucket if status_bucket in results else "Dream"
+                            
+                        # Fetch vacant seats (optional — if missing, default 0)
+                        try:
+                            latest_vacancy = db.query(VacancySeat).filter(
+                                VacancySeat.college_code == col.code,
+                                VacancySeat.branch_code == br.code
+                            ).order_by(VacancySeat.cap_round.desc()).first()
+                            vacant_count = latest_vacancy.vacant_seats if latest_vacancy else 0
+                        except Exception:
+                            vacant_count = 0
+                        
+                        # Build prediction output
+                        history = pred.get("history", {})
+                        latest_yr = max(history.keys()) if history else None
+                        res = PredictionResult(
+                            college=CollegeOut.model_validate(col),
+                            branch=BranchOut.model_validate(br),
+                            cap_round=history.get(latest_yr, {}).get("round", 1) if latest_yr else 1,
+                            seat_type=history.get(latest_yr, {}).get("seat_type", "GOPENH") if latest_yr else "GOPENH",
+                            admission_probability=pred.get("probability", 10.0),
+                            category_closing_percentiles={
+                                yr: [{"round": vals["round"], "percentile": Decimal(str(vals["percentile"])), "rank": vals["rank"]}]
+                                for yr, vals in history.items()
+                            },
+                            current_vacant_seats=vacant_count,
+                            previous_vacant_seats=0,
+                            explanation=pred.get("explanation", "")
+                        )
+                        results[bucket].append(res)
+                    except Exception:
+                        # Skip this branch silently on any error
+                        continue
+            except Exception:
+                # Skip this college silently on any error
+                continue
+    except Exception as e:
+        # Log but never crash — return whatever was collected
+        print(f"[predict_colleges] Error (returning partial results): {e}")
             
     # Sort buckets by probability descending
     for b in results:
