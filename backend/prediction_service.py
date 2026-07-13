@@ -41,183 +41,158 @@ class PredictionService:
         """
         Calculates the admission probability of a student getting a specific college branch.
         Uses 3-year weighted cutoffs and vacancy adjustments.
+        Always returns a valid dict — never raises an exception.
         """
-        # 1. Resolve student's appropriate seat type.
-        # Home University vs Other than Home University vs State Level
-        # For government/autonomous colleges, it is usually State Level (e.g. GOPENO or GOPENS).
-        # We fetch all cutoffs matching the college, branch, and category.
-        college = self.db.query(College).filter(College.code == college_code).first()
-        if not college:
-            return {"probability": 0.0, "status": "Dream", "explanation": "College not found."}
+        _default = {"probability": 10.0, "status": "Dream",
+                    "explanation": "Data unavailable for this course.", "history": {}}
+        try:
+            college = self.db.query(College).filter(College.code == college_code).first()
+            if not college:
+                return {**_default, "explanation": "College not found."}
+                
+            seat_types = []
+            gender_prefix = "L" if gender == "F" else "G"
             
-        # Determine likely seat types for this student.
-        # General pattern: e.g. GOBCH (General OBC Home University), GOPENO (General OPEN Other than Home University), GSC(State level)
-        seat_types = []
-        is_state_level = college.status in ["Government", "University Managed"] or college.autonomous
-        
-        gender_prefix = "L" if gender == "F" else "G"
-        
-        # Build candidate seat types
-        if category == "TFWS":
-            seat_types = ["TFWS"]
-        elif category == "EWS":
-            seat_types = ["EWS"]
-        else:
-            # Home University vs Other Than Home University
-            # If university matches, H, else O. Or S if state level
-            u_suffix = "H" if home_university.lower() in college.university.name.lower() else "O"
-            
-            # Seat types to search:
-            seat_types = [
-                f"{gender_prefix}{category}{u_suffix}", # e.g. GOBCH, LOPENH
-                f"G{category}{u_suffix}", # Fallback to general if ladies seat not found
-                f"{gender_prefix}{category}S", # State level
-                f"G{category}S",
-                f"{gender_prefix}OPEN{u_suffix}", # Fallback to OPEN
-                f"GOPEN{u_suffix}",
-                f"{gender_prefix}OPENS",
-                f"GOPENS"
-            ]
+            if category == "TFWS":
+                seat_types = ["TFWS"]
+            elif category == "EWS":
+                seat_types = ["EWS"]
+            else:
+                u_suffix = "H" if home_university and home_university.lower() in college.university.name.lower() else "O"
+                seat_types = [
+                    f"{gender_prefix}{category}{u_suffix}",
+                    f"G{category}{u_suffix}",
+                    f"{gender_prefix}{category}S",
+                    f"G{category}S",
+                    f"{gender_prefix}OPEN{u_suffix}",
+                    f"GOPEN{u_suffix}",
+                    f"{gender_prefix}OPENS",
+                    f"GOPENS"
+                ]
 
-        # Add minority quota seat type if student belongs to a minority
-        if minority_status and minority_status.lower() not in ["none", ""]:
-            seat_types.insert(0, "MI")
+            if minority_status and minority_status.lower() not in ["none", ""]:
+                seat_types.insert(0, "MI")
 
-        # Fetch cutoff records for this category
-        cutoffs_qs = self.db.query(Cutoff).join(AcademicYear).filter(
-            Cutoff.college_code == college_code,
-            Cutoff.branch_code == branch_code,
-            Cutoff.seat_type.in_(seat_types)
-        ).all()
-        
-        if not cutoffs_qs:
-            # Try a broader search just on category
             cutoffs_qs = self.db.query(Cutoff).join(AcademicYear).filter(
                 Cutoff.college_code == college_code,
                 Cutoff.branch_code == branch_code,
-                Cutoff.category == category
+                Cutoff.seat_type.in_(seat_types)
             ).all()
+            
+            if not cutoffs_qs:
+                cutoffs_qs = self.db.query(Cutoff).join(AcademicYear).filter(
+                    Cutoff.college_code == college_code,
+                    Cutoff.branch_code == branch_code,
+                    Cutoff.category == category
+                ).all()
 
-        # Group by academic year and find latest cap round cutoff for each year
-        year_cutoffs = {}
-        for c in cutoffs_qs:
-            y = c.academic_year.year
-            if y not in year_cutoffs or c.cap_round > year_cutoffs[y]["round"]:
-                year_cutoffs[y] = {
-                    "percentile": float(c.percentile),
-                    "rank": c.rank,
-                    "round": c.cap_round,
-                    "seat_type": c.seat_type
-                }
+            year_cutoffs = {}
+            for c in cutoffs_qs:
+                try:
+                    y = c.academic_year.year
+                    if y not in year_cutoffs or c.cap_round > year_cutoffs[y]["round"]:
+                        year_cutoffs[y] = {
+                            "percentile": float(c.percentile),
+                            "rank": c.rank,
+                            "round": c.cap_round,
+                            "seat_type": c.seat_type
+                        }
+                except Exception:
+                    continue
+                    
+            if not year_cutoffs:
+                fallback_qs = self.db.query(Cutoff).join(AcademicYear).filter(
+                    Cutoff.college_code == college_code,
+                    Cutoff.branch_code == branch_code,
+                    Cutoff.category == "OPEN"
+                ).all()
+                for c in fallback_qs:
+                    try:
+                        y = c.academic_year.year
+                        if y not in year_cutoffs or c.cap_round > year_cutoffs[y]["round"]:
+                            year_cutoffs[y] = {
+                                "percentile": float(c.percentile),
+                                "rank": c.rank,
+                                "round": c.cap_round,
+                                "seat_type": c.seat_type
+                            }
+                    except Exception:
+                        continue
+
+            if not year_cutoffs:
+                return {**_default, "explanation": "No cutoff history available for this course. Estimated as low probability.", "history": {}}
+
+            sorted_years = sorted(list(year_cutoffs.keys()), reverse=True)
+            
+            weighted_p = 0.0
+            total_w = 0.0
+            weights = [0.5, 0.3, 0.2]
+            
+            for idx, y in enumerate(sorted_years):
+                w = weights[idx] if idx < len(weights) else 0.1
+                weighted_p += year_cutoffs[y]["percentile"] * w
+                total_w += w
                 
-        if not year_cutoffs:
-            # If no cutoffs found, fallback to general OPEN state cutoffs
-            fallback_qs = self.db.query(Cutoff).join(AcademicYear).filter(
-                Cutoff.college_code == college_code,
-                Cutoff.branch_code == branch_code,
-                Cutoff.category == "OPEN"
-            ).all()
-            for c in fallback_qs:
-                y = c.academic_year.year
-                if y not in year_cutoffs or c.cap_round > year_cutoffs[y]["round"]:
-                    year_cutoffs[y] = {
-                        "percentile": float(c.percentile),
-                        "rank": c.rank,
-                        "round": c.cap_round,
-                        "seat_type": c.seat_type
-                    }
-
-        if not year_cutoffs:
-            return {
-                "probability": 10.0,
-                "status": "Dream",
-                "explanation": "No cutoff history available for this course. Estimated as low probability.",
-                "history": {}
-            }
-
-        # Calculate weighted cutoff percentile
-        # Weights: Last year = 50%, 2 years ago = 30%, 3 years ago = 20%
-        # Sorted years descending
-        sorted_years = sorted(list(year_cutoffs.keys()), reverse=True)
-        
-        weighted_p = 0.0
-        total_w = 0.0
-        weights = [0.5, 0.3, 0.2]
-        
-        for idx, y in enumerate(sorted_years):
-            if idx < len(weights):
-                w = weights[idx]
+            weighted_cutoff = weighted_p / total_w if total_w > 0 else 0.0
+            delta = student_percentile - weighted_cutoff
+            
+            percentile_gap = max(0.01, 100.0 - weighted_cutoff)
+            safe_margin = min(1.0, max(0.01, 0.8 * (percentile_gap / 10.0)))
+            moderate_margin = -min(1.0, max(0.15, 0.5 * (percentile_gap / 10.0)))
+            
+            if delta >= safe_margin:
+                prob = 95.0 + min(4.0, (delta - safe_margin) * 2.0)
+                status = "Safe"
+            elif delta >= 0.0:
+                prob = 75.0 + (delta / safe_margin) * 20.0
+                status = "High Chance"
+            elif delta >= moderate_margin:
+                prob = 50.0 + ((delta - moderate_margin) / abs(moderate_margin)) * 25.0
+                status = "Moderate Chance"
             else:
-                w = 0.1
-            weighted_p += year_cutoffs[y]["percentile"] * w
-            total_w += w
-            
-        weighted_cutoff = weighted_p / total_w if total_w > 0 else 0.0
-        
-        # Calculate Delta
-        delta = student_percentile - weighted_cutoff
-        
-        # Dynamic margins based on competitiveness of the college
-        # At very high percentiles (e.g. 99.8%), a very tiny margin is safe.
-        # At lower percentiles (e.g. 80%), we need about 1.0% margin.
-        percentile_gap = max(0.01, 100.0 - weighted_cutoff)
-        safe_margin = min(1.0, max(0.01, 0.8 * (percentile_gap / 10.0)))
-        moderate_margin = -min(1.0, max(0.15, 0.5 * (percentile_gap / 10.0)))
-        
-        # Basic Probability calculation
-        if delta >= safe_margin:
-            prob = 95.0 + min(4.0, (delta - safe_margin) * 2.0)
-            status = "Safe"
-        elif delta >= 0.0:
-            prob = 75.0 + (delta / safe_margin) * 20.0
-            status = "High Chance"
-        elif delta >= moderate_margin:
-            prob = 50.0 + ((delta - moderate_margin) / abs(moderate_margin)) * 25.0
-            status = "Moderate Chance"
-        else:
-            # Dream college
-            prob = max(5.0, 50.0 - (abs(delta - moderate_margin) / 3.0) * 45.0)
-            status = "Dream"
-            
-        # Vacancy Adjustment
-        # Fetch latest vacant seats for this course
-        latest_year = sorted_years[0] if sorted_years else None
-        vacant_seats = 0
-        if latest_year:
-            vacancy_record = self.db.query(VacancySeat).join(AcademicYear).filter(
-                VacancySeat.college_code == college_code,
-                VacancySeat.branch_code == branch_code,
-                AcademicYear.year == latest_year
-            ).order_by(VacancySeat.cap_round.desc()).first()
-            if vacancy_record:
-                vacant_seats = vacancy_record.vacant_seats
+                prob = max(5.0, 50.0 - (abs(delta - moderate_margin) / 3.0) * 45.0)
+                status = "Dream"
                 
-        # If vacant seats are high, boost probability
-        if vacant_seats > 5:
-            boost = min(5.0, (vacant_seats - 5) * 0.5)
-            prob = min(99.0, prob + boost)
-        elif vacant_seats == 0 and status in ["Safe", "High Chance"]:
-            prob = max(50.0, prob - 3.0) # slight penalty since it fills fast
-            
-        # Generate text explanation
-        explanation = f"Based on historical cutoff trends, the weighted cutoff percentile for your category is {weighted_cutoff:.4f}%. "
-        if delta >= 0:
-            explanation += f"Your percentile ({student_percentile:.4f}%) is {delta:.4f}% ABOVE the weighted average. "
-        else:
-            explanation += f"Your percentile ({student_percentile:.4f}%) is {abs(delta):.4f}% BELOW the weighted average. "
-            
-        if vacant_seats > 0:
-            explanation += f"Additionally, there were {vacant_seats} vacant seats recorded in the last CAP round of {latest_year}, which increases your allocation chance."
-        else:
-            explanation += f"Cutoffs are highly competitive and vacant seats were limited last year."
+            # Vacancy adjustment
+            latest_year = sorted_years[0] if sorted_years else None
+            vacant_seats = 0
+            try:
+                if latest_year:
+                    vacancy_record = self.db.query(VacancySeat).join(AcademicYear).filter(
+                        VacancySeat.college_code == college_code,
+                        VacancySeat.branch_code == branch_code,
+                        AcademicYear.year == latest_year
+                    ).order_by(VacancySeat.cap_round.desc()).first()
+                    if vacancy_record:
+                        vacant_seats = vacancy_record.vacant_seats
+            except Exception:
+                vacant_seats = 0
+                    
+            if vacant_seats > 5:
+                prob = min(99.0, prob + min(5.0, (vacant_seats - 5) * 0.5))
+            elif vacant_seats == 0 and status in ["Safe", "High Chance"]:
+                prob = max(50.0, prob - 3.0)
+                
+            explanation = f"Based on historical cutoff trends, the weighted cutoff percentile for your category is {weighted_cutoff:.4f}%. "
+            if delta >= 0:
+                explanation += f"Your percentile ({student_percentile:.4f}%) is {delta:.4f}% ABOVE the weighted average. "
+            else:
+                explanation += f"Your percentile ({student_percentile:.4f}%) is {abs(delta):.4f}% BELOW the weighted average. "
+            if vacant_seats > 0:
+                explanation += f"Additionally, there were {vacant_seats} vacant seats recorded in the last CAP round of {latest_year}, which increases your allocation chance."
+            else:
+                explanation += "Cutoffs are highly competitive and vacant seats were limited last year."
 
-        return {
-            "probability": round(prob, 2),
-            "status": status,
-            "explanation": explanation,
-            "weighted_cutoff": round(weighted_cutoff, 4),
-            "history": year_cutoffs
-        }
+            return {
+                "probability": round(prob, 2),
+                "status": status,
+                "explanation": explanation,
+                "weighted_cutoff": round(weighted_cutoff, 4),
+                "history": year_cutoffs
+            }
+        except Exception as e:
+            print(f"[calculate_admission_probability] Error for college={college_code} branch={branch_code}: {e}")
+            return _default
 
     def review_preference_list(
         self,
