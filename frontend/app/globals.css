@@ -288,8 +288,8 @@ a {
 
 .form-row-main {
   display: grid;
-  grid-template-columns: 1.5fr 1.1fr 0.8fr 1.1fr 1.1fr;
-  gap: 20px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
   align-items: end;
 }
 
