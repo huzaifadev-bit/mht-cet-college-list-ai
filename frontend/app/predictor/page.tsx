@@ -68,6 +68,7 @@ const BUCKET_META: Record<string, { color: string; bg: string; label: string; ic
 export default function PredictorPage() {
   // Form state
   const [percentile, setPercentile] = useState('');
+  const [rank, setRank]             = useState('');
   const [category, setCategory]     = useState('OPEN');
   const [gender, setGender]         = useState('M');
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
@@ -124,7 +125,7 @@ export default function PredictorPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           percentile: pct,
-          rank: null,
+          rank: rank ? parseInt(rank, 10) : null,
           category,
           gender,
           home_university: '',
@@ -343,6 +344,17 @@ export default function PredictorPage() {
               />
             </div>
             <div className="form-field">
+              <label>State General Rank <span className="hint-text">(Optional)</span></label>
+              <input
+                type="number"
+                min="1" max="300000"
+                placeholder="e.g. 15420"
+                value={rank}
+                onChange={e => setRank(e.target.value)}
+                className="text-input"
+              />
+            </div>
+            <div className="form-field">
               <label>Caste Category</label>
               <select value={category} onChange={e => setCategory(e.target.value)} className="sel-input">
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -366,9 +378,19 @@ export default function PredictorPage() {
             <div className="form-field">
               <label>Minority Status</label>
               <select value={minority} onChange={e => setMinority(e.target.value)} className="sel-input">
-                <option value="None">None (General)</option>
-                <option value="Linguistic">Linguistic Minority</option>
-                <option value="Religious">Religious Minority</option>
+                <option value="None">None (General - No Minority)</option>
+                <option value="Hindi Linguistic Minority">Hindi Linguistic Minority</option>
+                <option value="Gujarati / Kutchhi Minority">Gujarati / Kutchhi Linguistic Minority</option>
+                <option value="Sindhi Minority">Sindhi Linguistic Minority</option>
+                <option value="South Indian Minority">South Indian (Tamil/Telugu/Malayalam) Minority</option>
+                <option value="Punjabi Minority">Punjabi Linguistic Minority</option>
+                <option value="Muslim Minority">Muslim Religious Minority</option>
+                <option value="Christian Minority">Christian / Roman Catholic Religious Minority</option>
+                <option value="Jain Minority">Jain Minority (Linguistic / Religious)</option>
+                <option value="Sikh Minority">Sikh Religious Minority</option>
+                <option value="Buddhist Minority">Buddhist Religious Minority</option>
+                <option value="Parsi Minority">Parsi Religious Minority</option>
+                <option value="Other Minority">Other Minority</option>
               </select>
             </div>
           </div>
