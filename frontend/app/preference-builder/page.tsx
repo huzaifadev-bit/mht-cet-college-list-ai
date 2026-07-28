@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+// Version 1.2.0 - Direct Position Jump enabled
 import Link from 'next/link';
 import { API_BASE_URL } from '../config';
 import { 
