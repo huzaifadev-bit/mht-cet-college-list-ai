@@ -140,6 +140,33 @@ export default function PreferenceBuilderPage() {
     }
   };
 
+  // Direct jump command: Move option to any target position (e.g. 3, 4, 26)
+  const moveToPosition = (currentIndex: number, targetPosition: number) => {
+    if (isNaN(targetPosition)) return;
+    
+    let targetIndex = targetPosition - 1;
+    if (targetIndex < 0) targetIndex = 0;
+    if (targetIndex >= preferences.length) targetIndex = preferences.length - 1;
+    
+    if (currentIndex === targetIndex) return;
+
+    if (preferences[currentIndex].locked) {
+      alert('Cannot move a locked college option. Please unlock it first.');
+      return;
+    }
+
+    const updated = [...preferences];
+    const [movedItem] = updated.splice(currentIndex, 1);
+    updated.splice(targetIndex, 0, movedItem);
+
+    updated.forEach((item, idx) => {
+      item.preference_order = idx + 1;
+    });
+
+    setPreferences(updated);
+    savePreferenceList(updated);
+  };
+
   // Reorder commands: Move up or down
   const moveItem = (index: number, direction: 'UP' | 'DOWN') => {
     const nextIndex = direction === 'UP' ? index - 1 : index + 1;
@@ -470,13 +497,13 @@ export default function PreferenceBuilderPage() {
               <table className="preferences-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '40px' }}>Pref</th>
+                    <th style={{ width: '85px' }}>Pref #</th>
                     <th style={{ width: '80px' }} className="print-hide">Lock</th>
                     <th style={{ width: '100px' }}>Choice Code</th>
                     <th>College Name & Branch</th>
                     <th style={{ width: '100px' }}>Tuition Fees</th>
                     <th style={{ width: '100px' }}>AI Prob.</th>
-                    <th style={{ width: '100px' }} className="print-hide">Reorder</th>
+                    <th style={{ width: '160px' }} className="print-hide">Reorder & Jump</th>
                     <th style={{ width: '50px' }} className="print-hide">Wipe</th>
                   </tr>
                 </thead>
@@ -503,7 +530,28 @@ export default function PreferenceBuilderPage() {
                           onDragEnd={handleDragEnd}
                           className={`draggable-row ${isLocked ? 'locked-row' : ''}`}
                         >
-                          <td className="bold-text">#{idx + 1}</td>
+                          <td className="bold-text">
+                            <div className="pref-order-input-wrap">
+                              <span className="hash-tag">#</span>
+                              <input 
+                                type="number" 
+                                min={1} 
+                                max={preferences.length} 
+                                defaultValue={idx + 1}
+                                key={`order_${item.id}_${idx}_${item.preference_order}`}
+                                onBlur={(e) => moveToPosition(idx, parseInt(e.target.value, 10))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    moveToPosition(idx, parseInt((e.target as HTMLInputElement).value, 10));
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                                className="order-num-input"
+                                disabled={isLocked}
+                                title="Type any position number (e.g. 3, 4, 26) and press Enter to jump option directly"
+                              />
+                            </div>
+                          </td>
                           <td className="print-hide">
                             <button 
                               className={`lock-toggle-btn ${isLocked ? 'active' : ''}`}
@@ -532,6 +580,7 @@ export default function PreferenceBuilderPage() {
                                 className="reorder-btn" 
                                 onClick={() => moveItem(idx, 'UP')}
                                 disabled={idx === 0 || isLocked}
+                                title="Move up 1 position"
                               >
                                 <ArrowUp size={12} />
                               </button>
@@ -539,8 +588,20 @@ export default function PreferenceBuilderPage() {
                                 className="reorder-btn" 
                                 onClick={() => moveItem(idx, 'DOWN')}
                                 disabled={idx === preferences.length - 1 || isLocked}
+                                title="Move down 1 position"
                               >
                                 <ArrowDown size={12} />
+                              </button>
+                              <button
+                                className="jump-btn"
+                                onClick={() => {
+                                  const val = prompt(`Directly move "${item.college.name}" to position number (1 to ${preferences.length}):`, String(idx + 1));
+                                  if (val) moveToPosition(idx, parseInt(val, 10));
+                                }}
+                                disabled={isLocked}
+                                title="Directly jump option to any position number (e.g. 3, 4, 26)"
+                              >
+                                Move to...
                               </button>
                             </div>
                           </td>
