@@ -101,10 +101,10 @@ class PredictionService:
                     continue
                     
             if not year_cutoffs:
+                # Fallback to any recorded cutoffs for this college and branch
                 fallback_qs = self.db.query(Cutoff).join(AcademicYear).filter(
                     Cutoff.college_code == college_code,
-                    Cutoff.branch_code == branch_code,
-                    Cutoff.category == "OPEN"
+                    Cutoff.branch_code == branch_code
                 ).all()
                 for c in fallback_qs:
                     try:
@@ -178,10 +178,14 @@ class PredictionService:
                 explanation += f"Your percentile ({student_percentile:.4f}%) is {delta:.4f}% ABOVE the weighted average. "
             else:
                 explanation += f"Your percentile ({student_percentile:.4f}%) is {abs(delta):.4f}% BELOW the weighted average. "
+            
+            if minority_status and minority_status.lower() not in ["none", ""]:
+                explanation += f" Evaluated with {minority_status} preference."
+
             if vacant_seats > 0:
-                explanation += f"Additionally, there were {vacant_seats} vacant seats recorded in the last CAP round of {latest_year}, which increases your allocation chance."
+                explanation += f" Additionally, there were {vacant_seats} vacant seats recorded in the last CAP round of {latest_year}, which increases your allocation chance."
             else:
-                explanation += "Cutoffs are highly competitive and vacant seats were limited last year."
+                explanation += " Cutoffs are highly competitive and vacant seats were limited last year."
 
             return {
                 "probability": round(prob, 2),
