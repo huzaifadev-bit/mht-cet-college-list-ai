@@ -186,19 +186,22 @@ export default function PredictorPage() {
 
   const addToPreferences = (item: CollegeResult) => {
     const key = `${item.college.code}_${item.branch.code}`;
-    if (saved.has(key)) return;
     
     try {
       const localPrefs: any[] = JSON.parse(localStorage.getItem('cap_preferences') || '[]');
-      localPrefs.push({
-        id: `local_${Date.now()}_${key}`,
-        college: item.college,
-        branch: item.branch,
-        preference_order: localPrefs.length + 1,
-        locked: false,
-        admission_probability: item.admission_probability,
-      });
-      localStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
+      const exists = localPrefs.some(p => String(p.college.code) === String(item.college.code) && String(p.branch.code) === String(item.branch.code));
+      if (!exists) {
+        localPrefs.push({
+          id: `local_${Date.now()}_${key}`,
+          college: item.college,
+          branch: item.branch,
+          preference_order: localPrefs.length + 1,
+          locked: false,
+          admission_probability: item.admission_probability,
+        });
+        localStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
+        window.dispatchEvent(new Event('storage'));
+      }
       setSaved(prev => new Set([...prev, key]));
     } catch (e) {
       console.error("Failed to add preference", e);
