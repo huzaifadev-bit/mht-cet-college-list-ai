@@ -117,7 +117,16 @@ export default function PredictorPage() {
     setLoading(true);
     setError('');
     setResults(null);
-    setHasSearched(true);
+    try {
+      localStorage.setItem('cap_student_profile', JSON.stringify({
+        percentile: pct,
+        rank: rank ? parseInt(rank, 10) : null,
+        category,
+        gender,
+        minority_status: minority,
+        home_university: ''
+      }));
+    } catch(e) {}
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/predict`, {
