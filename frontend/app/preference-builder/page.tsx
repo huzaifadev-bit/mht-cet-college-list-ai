@@ -73,32 +73,62 @@ export default function PreferenceBuilderPage() {
   // Drag and Drop State
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
+  const loadPreferences = () => {
+    const localPrefs = localStorage.getItem('cap_preferences');
+    if (localPrefs) {
+      try {
+        const parsed = JSON.parse(localPrefs);
+        parsed.sort((a: any, b: any) => a.preference_order - b.preference_order);
+        setPreferences(parsed);
+      } catch (e) {
+        setPreferences([]);
+      }
+    } else {
+      setPreferences([]);
+    }
+  };
+
   useEffect(() => {
+    let profData = null;
+
+    // 1. Try saved user object
     const savedUser = localStorage.getItem('user');
     if (savedUser) {
       try {
         const u = JSON.parse(savedUser);
-        if (u.profile_data) {
-          setProfile(u.profile_data);
-          
-          // Load active preferences locally from localStorage
-          const localPrefs = localStorage.getItem('cap_preferences');
-          if (localPrefs) {
-            const parsed = JSON.parse(localPrefs);
-            parsed.sort((a: any, b: any) => a.preference_order - b.preference_order);
-            setPreferences(parsed);
-          } else {
-            setPreferences([]);
-          }
-        } else {
-          setError('Please configure your scores and preferences on the home page first.');
-        }
-      } catch (e) {
-        setError('Error reading student profile.');
-      }
-    } else {
-      setError('Please configure your scores and preferences on the home page first.');
+        if (u.profile_data) profData = u.profile_data;
+      } catch (e) {}
     }
+
+    // 2. Try saved cap_student_profile
+    if (!profData) {
+      const savedProf = localStorage.getItem('cap_student_profile');
+      if (savedProf) {
+        try {
+          profData = JSON.parse(savedProf);
+        } catch (e) {}
+      }
+    }
+
+    // 3. Fallback default profile so the page never blocks
+    if (!profData) {
+      profData = {
+        percentile: 90.0,
+        rank: 15000,
+        category: 'OPEN',
+        gender: 'M',
+        home_university: '',
+        minority_status: 'None'
+      };
+    }
+    setProfile(profData);
+
+    loadPreferences();
+
+    window.addEventListener('storage', loadPreferences);
+    return () => {
+      window.removeEventListener('storage', loadPreferences);
+    };
   }, []);
 
   const savePreferenceList = async (itemsList: PreferenceItem[]) => {
@@ -163,11 +193,12 @@ export default function PreferenceBuilderPage() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          percentile: profile.percentile,
-          rank: profile.rank,
-          category: profile.category,
-          gender: profile.gender,
-          home_university: profile.home_university,
+          percentile: profile.percentile || 90.0,
+          rank: profile.rank || 15000,
+          category: profile.category || 'OPEN',
+          gender: profile.gender || 'M',
+          home_university: profile.home_university || '',
+          minority_status: profile.minority_status || 'None',
           preferences: preferences.map(p => ({
             college_code: p.college.code,
             branch_code: p.branch.code,
@@ -200,14 +231,12 @@ export default function PreferenceBuilderPage() {
     
     setSearching(true);
     try {
-      // Direct mock predictions or fetch predictions to find matching colleges
-      // Let's call the prediction endpoint with very broad filters to fetch matches
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch(`${API_BASE_URL}/api/predict`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers,
         body: JSON.stringify({
           percentile: profile?.percentile || 90.0,
           rank: profile?.rank || 10000,
