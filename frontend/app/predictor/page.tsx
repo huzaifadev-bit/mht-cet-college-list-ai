@@ -36,17 +36,132 @@ interface CollegeResult {
 
 const CATEGORIES = ['OPEN', 'OBC', 'SC', 'ST', 'EWS', 'VJNT', 'NT1', 'NT2', 'NT3', 'SBC', 'TFWS', 'DEF'];
 
-const ALL_BRANCHES = [
+const ALL_POPULAR_BRANCHES = [
   'Computer Engineering',
   'Information Technology',
   'Computer Science and Engineering',
   'Artificial Intelligence and Data Science',
-  'Computer Science and Engineering(Artificial Intelligence and Machine Learning)',
+  'Artificial Intelligence and Machine Learning',
+  'Cyber Security',
+  'Data Science',
+  'Computer Science and Business Systems',
+  'Computer Science and Design',
   'Electronics and Telecommunication Engg',
-  'Mechanical Engineering',
+  'Electronics Engineering',
+  'Electronics and Computer Science',
   'Electrical Engineering',
+  'Electrical and Electronics Engineering',
+  'Mechanical Engineering',
+  'Mechatronics Engineering',
+  'Robotics and Automation',
+  'Automation and Robotics',
+  'Automobile Engineering',
   'Civil Engineering',
   'Chemical Engineering',
+  'Bio Technology',
+  'Bio Medical Engineering',
+  'Instrumentation Engineering',
+  'Production Engineering',
+  'Aeronautical Engineering',
+  'Metallurgy and Material Technology',
+  'Food Engineering and Technology',
+  'Textile Engineering / Technology',
+];
+
+const FULL_BRANCH_LIST = [
+  "Aeronautical Engineering",
+  "Agricultural Engineering",
+  "Architectural Assistantship",
+  "Artificial Intelligence",
+  "Artificial Intelligence (AI) and Data Science",
+  "Artificial Intelligence and Data Science",
+  "Artificial Intelligence and Machine Learning",
+  "Automation and Robotics",
+  "Automobile Engineering",
+  "Bio Medical Engineering",
+  "Bio Technology",
+  "Chemical Engineering",
+  "Civil Engineering",
+  "Civil Engineering (Structural Engineering)",
+  "Civil Engineering and Planning",
+  "Civil Engineering with Computer Application",
+  "Civil and Environmental Engineering",
+  "Civil and infrastructure Engineering",
+  "Computer Engineering",
+  "Computer Engineering (Regional Language)",
+  "Computer Engineering (Software Engineering)",
+  "Computer Science",
+  "Computer Science and Business Systems",
+  "Computer Science and Design",
+  "Computer Science and Engineering",
+  "Computer Science and Engineering (Artificial Intelligence and Data Science)",
+  "Computer Science and Engineering (Artificial Intelligence)",
+  "Computer Science and Engineering (Cyber Security)",
+  "Computer Science and Engineering (IoT)",
+  "Computer Science and Engineering(Artificial Intelligence and Machine Learning)",
+  "Computer Science and Engineering(Cyber Security)",
+  "Computer Science and Engineering(Data Science)",
+  "Computer Science and Information Technology",
+  "Computer Science and Technology",
+  "Computer Technology",
+  "Cyber Security",
+  "Data Engineering",
+  "Data Science",
+  "Dyestuff Technology",
+  "Electrical Engg[Electronics and Power]",
+  "Electrical Engineering",
+  "Electrical and Computer Engineering",
+  "Electrical and Electronics Engineering",
+  "Electrical, Electronics and Power",
+  "Electronics & Telecommunication Engineering",
+  "Electronics Engineering",
+  "Electronics Engineering ( VLSI Design and Technology)",
+  "Electronics and Biomedical Engineering",
+  "Electronics and Communication Engineering",
+  "Electronics and Computer Engineering",
+  "Electronics and Computer Science",
+  "Electronics and Telecommunication Engg",
+  "Fashion Technology",
+  "Fibres and Textile Processing Technology",
+  "Fire Engineering",
+  "Food Engineering",
+  "Food Engineering and Technology",
+  "Food Technology",
+  "Industrial IoT",
+  "Information Technology",
+  "Instrumentation Engineering",
+  "Instrumentation and Control Engineering",
+  "Internet of Things (IoT)",
+  "Manufacturing Science and Engineering",
+  "Mechanical & Automation Engineering",
+  "Mechanical Engineering",
+  "Mechanical Engineering Automobile",
+  "Mechanical Engineering[Sandwich]",
+  "Mechanical and Automation Engineering",
+  "Mechatronics Engineering",
+  "Metallurgy and Material Technology",
+  "Mining Engineering",
+  "Oil Technology",
+  "Oil and Paints Technology",
+  "Paints Technology",
+  "Petro Chemical Engineering",
+  "Pharmaceutical and Fine Chemical Technology",
+  "Pharmaceuticals Chemistry and Technology",
+  "Plastic Technology",
+  "Plastic and Polymer Engineering",
+  "Polymer Engineering and Technology",
+  "Printing and Packing Technology",
+  "Production Engineering",
+  "Production Engineering[Sandwich]",
+  "Robotics and Artificial Intelligence",
+  "Robotics and Automation",
+  "Safety and Fire Engineering",
+  "Structural Engineering",
+  "Surface Coating Technology",
+  "Textile Chemistry",
+  "Textile Engineering / Technology",
+  "Textile Technology",
+  "VLSI"
 ];
 
 const DISTRICTS = [
@@ -409,13 +524,45 @@ export default function PredictorPage() {
 
           {/* Branches */}
           <div className="chips-field">
-            <label>Preferred Branches <span className="hint-text">(select multiple — leave blank for all)</span></label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+              <label>Preferred Branches <span className="hint-text">(select multiple — leave blank for all 109 branches)</span></label>
+              <select
+                className="sel-input"
+                style={{ width: 'auto', minWidth: '220px', padding: '6px 12px', fontSize: '0.82rem', borderRadius: '8px' }}
+                onChange={(e) => {
+                  if (e.target.value && !selectedBranches.includes(e.target.value)) {
+                    setSelectedBranches(prev => [...prev, e.target.value]);
+                  }
+                  e.target.value = '';
+                }}
+              >
+                <option value="">+ Search/Add from All 109 Branches...</option>
+                {FULL_BRANCH_LIST.map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+
             <div className="chips-row">
-              {ALL_BRANCHES.map(b => (
-                <button key={b} type="button"
-                  className={`chip ${selectedBranches.includes(b) ? 'chip-active' : ''}`}
+              {selectedBranches.map(b => (
+                <button
+                  key={`sel_${b}`}
+                  type="button"
+                  className="chip chip-active"
                   onClick={() => toggleBranch(b)}
-                >{b}</button>
+                >
+                  <Check size={12} style={{ marginRight: 4 }} /> {b}
+                </button>
+              ))}
+              {ALL_POPULAR_BRANCHES.filter(b => !selectedBranches.includes(b)).map(b => (
+                <button
+                  key={`pop_${b}`}
+                  type="button"
+                  className="chip"
+                  onClick={() => toggleBranch(b)}
+                >
+                  {b}
+                </button>
               ))}
             </div>
           </div>
