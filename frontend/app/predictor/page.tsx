@@ -324,34 +324,43 @@ export default function PredictorPage() {
   };
 
   const processResults = (list: CollegeResult[]) => {
+    if (!Array.isArray(list)) return [];
     let out = [...list];
     if (searchQ) {
       const q = searchQ.toLowerCase();
-      out = out.filter(i => i.college.name.toLowerCase().includes(q) || i.branch.name.toLowerCase().includes(q) || i.college.code.toString().includes(q));
+      out = out.filter(i => 
+        (i.college?.name || '').toLowerCase().includes(q) || 
+        (i.branch?.name || '').toLowerCase().includes(q) || 
+        String(i.college?.code || '').includes(q)
+      );
     }
     if (filterDistrict !== 'ALL') {
-      out = out.filter(i => i.college.district.name.toLowerCase() === filterDistrict.toLowerCase());
+      out = out.filter(i => (i.college?.district?.name || '').toLowerCase() === filterDistrict.toLowerCase());
     }
     if (filterBranch !== 'ALL') {
-      out = out.filter(i => i.branch.name === filterBranch);
+      out = out.filter(i => i.branch?.name === filterBranch);
     }
-    if (sortBy === 'PROB_DESC')   out.sort((a, b) => b.admission_probability - a.admission_probability);
-    if (sortBy === 'PROB_ASC')    out.sort((a, b) => a.admission_probability - b.admission_probability);
-    if (sortBy === 'FEES_ASC')    out.sort((a, b) => (a.college.fees ?? 999999) - (b.college.fees ?? 999999));
+    if (sortBy === 'PROB_DESC')   out.sort((a, b) => (b.admission_probability || 0) - (a.admission_probability || 0));
+    if (sortBy === 'PROB_ASC')    out.sort((a, b) => (a.admission_probability || 0) - (b.admission_probability || 0));
+    if (sortBy === 'FEES_ASC')    out.sort((a, b) => (a.college?.fees ?? 999999) - (b.college?.fees ?? 999999));
     return out;
   };
 
   // Extract unique districts and branches matching the results dynamically
-  const allResultDistricts = results ? [...new Set(Object.values(results).flat().map(i => i.college.district.name))].filter(Boolean).sort() : [];
-  const allResultBranches  = results ? [...new Set(Object.values(results).flat().map(i => i.branch.name))].filter(Boolean).sort() : [];
+  const allResultDistricts = results ? [...new Set(Object.values(results).flat().map(i => i.college?.district?.name))].filter(Boolean).sort() : [];
+  const allResultBranches  = results ? [...new Set(Object.values(results).flat().map(i => i.branch?.name))].filter(Boolean).sort() : [];
   const totalResults       = results ? Object.values(results).flat().length : 0;
 
   // ─── Card ────────────────────────────────────────────────────────────────
   const renderCard = (item: CollegeResult, bucket: string) => {
-    const id   = `${item.college.code}_${item.branch.code}`;
-    const meta = BUCKET_META[bucket];
+    const colCode = item.college?.code || 0;
+    const brCode = item.branch?.code || '';
+    const id   = `${colCode}_${brCode}`;
+    const meta = BUCKET_META[bucket] || BUCKET_META['Dream'];
     const isSaved   = saved.has(id);
     const isExpanded = expanded.has(id);
+    const districtName = item.college?.district?.name || 'Maharashtra';
+    const closingCutoffs = item.category_closing_percentiles || {};
 
     return (
       <div key={id} className="result-card">
@@ -359,17 +368,17 @@ export default function PredictorPage() {
         <div className="card-top">
           <div className="card-left">
             <div className="card-badges-row">
-              <span className="code-badge">CODE: {item.college.code}</span>
-              <span className="status-badge">{item.college.status}</span>
-              {item.college.autonomous && <span className="auto-badge">Autonomous</span>}
+              <span className="code-badge">CODE: {colCode}</span>
+              <span className="status-badge">{item.college?.status || 'College'}</span>
+              {item.college?.autonomous && <span className="auto-badge">Autonomous</span>}
             </div>
-            <h3 className="college-name">{item.college.name}</h3>
-            <p className="branch-name">{item.branch.name}</p>
+            <h3 className="college-name">{item.college?.name || 'College Name'}</h3>
+            <p className="branch-name">{item.branch?.name || 'Engineering Branch'}</p>
             <div className="meta-row">
-              <span className="meta-item"><MapPin size={14}/> District: {item.college.district.name}</span>
-              {item.college.fees && <span className="meta-item">Annual Fee: ₹{item.college.fees.toLocaleString()}</span>}
-              {item.college.average_package && <span className="meta-item"><BarChart2 size={14}/> Avg pkg: {item.college.average_package} LPA</span>}
-              {item.college.hostel_availability && <span className="meta-item hostel">🏠 Hostel Available</span>}
+              <span className="meta-item"><MapPin size={14}/> District: {districtName}</span>
+              {item.college?.fees && <span className="meta-item">Annual Fee: ₹{item.college.fees.toLocaleString()}</span>}
+              {item.college?.average_package && <span className="meta-item"><BarChart2 size={14}/> Avg pkg: {item.college.average_package} LPA</span>}
+              {item.college?.hostel_availability && <span className="meta-item hostel">🏠 Hostel Available</span>}
             </div>
           </div>
 
@@ -420,20 +429,28 @@ export default function PredictorPage() {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(item.category_closing_percentiles).map(([yr, entries]) =>
-                  entries.map((e, idx) => (
-                    <tr key={`${yr}_${idx}`}>
-                      <td>{yr}</td>
-                      <td>Round {e.round}</td>
-                      <td>{item.seat_type}</td>
-                      <td className="cutoff-pct">{e.percentile}%</td>
-                      <td>#{e.rank}</td>
-                    </tr>
-                  ))
+                {Object.keys(closingCutoffs).length > 0 ? (
+                  Object.entries(closingCutoffs).map(([yr, entries]) =>
+                    (entries || []).map((e, idx) => (
+                      <tr key={`${yr}_${idx}`}>
+                        <td>{yr}</td>
+                        <td>Round {e.round}</td>
+                        <td>{item.seat_type}</td>
+                        <td className="cutoff-pct">{e.percentile}%</td>
+                        <td>#{e.rank}</td>
+                      </tr>
+                    ))
+                  )
+                ) : (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
+                      Cutoff history available in general cutoff list.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
-            {item.college.official_website && (
+            {item.college?.official_website && (
               <a href={item.college.official_website} target="_blank" rel="noreferrer" className="website-link">
                 <Globe size={14}/> Visit College Website <ExternalLink size={12}/>
               </a>
