@@ -104,7 +104,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from fastapi import Request
+def normalize_branch_name(name: str) -> str:
+    if not name:
+        return ""
+    s = name.lower().replace('&', ' and ')
+    for char in ['(', ')', '[', ']', '-', '/', ',', '.']:
+        s = s.replace(char, ' ')
+    s = s.replace('engg', 'engineering').replace('tech', 'technology')
+    return ' '.join(s.split())
+
+def is_branch_match(pref: str, br_name: str, br_code: str = "") -> bool:
+    if pref == br_code:
+        return True
+    np = normalize_branch_name(pref)
+    nb = normalize_branch_name(br_name)
+    if not np or not nb:
+        return False
+    if np in nb or nb in np:
+        return True
+    words_p = set(w for w in np.split() if len(w) > 2)
+    words_b = set(w for w in nb.split() if len(w) > 2)
+    if words_p and words_p.issubset(words_b):
+        return True
+    return False
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -256,7 +278,7 @@ def predict_colleges(req: PredictionRequest, db: Session = Depends(get_db)):
                         # Filter by preferred branch
                         if branches_filter:
                             match_branch = any(
-                                pref_br.lower() in br.name.lower() or pref_br == br.code
+                                is_branch_match(pref_br, br.name, br.code)
                                 for pref_br in branches_filter
                             )
                             if not match_branch:
