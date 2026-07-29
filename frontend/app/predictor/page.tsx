@@ -650,7 +650,7 @@ function PredictorPage() {
                     className={`chip ${isSelected ? 'chip-active' : ''}`}
                     onClick={() => toggleBranch(b)}
                   >
-                    {isSelected && <Check size={12} style={{ marginRight: 4 }} />}
+                    {isSelected && <span style={{ marginRight: '4px', fontWeight: 'bold' }}>✓</span>}
                     {b}
                   </button>
                 );
@@ -669,7 +669,7 @@ function PredictorPage() {
                 <label>Preferred Districts <span className="hint-text">(select multiple — leave blank for all Maharashtra)</span></label>
                 <div className="chips-row">
                   {DISTRICTS.map(d => (
-                    <button key={d} type="button"
+                    <button key={`dist_chip_${d}`} type="button"
                       className={`chip ${selectedDistricts.includes(d) ? 'chip-active' : ''}`}
                       onClick={() => toggleDistrict(d)}
                     >{d}</button>
