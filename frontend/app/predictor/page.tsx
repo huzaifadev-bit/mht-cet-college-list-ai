@@ -263,29 +263,42 @@ export default function PredictorPage() {
     }));
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/predict`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          percentile: pct,
-          rank: rank ? parseInt(rank, 10) : null,
-          category,
-          gender,
-          home_university: '',
-          candidature_type: 'Type A',
-          tfws_status: category === 'TFWS',
-          defence_status: category === 'DEF',
-          ph_status: false,
-          minority_status: minority,
-          preferred_branches: selectedBranches,
-          preferred_districts: selectedDistricts,
-          max_fees: null,
-          gov_private_pref: govPref,
-          autonomous_pref: 'ANY',
-          hostel_required: false,
-          placement_priority: false,
-        }),
-      });
+      const payload = {
+        percentile: pct,
+        rank: rank ? parseInt(rank, 10) : null,
+        category,
+        gender,
+        home_university: '',
+        candidature_type: 'Type A',
+        tfws_status: category === 'TFWS',
+        defence_status: category === 'DEF',
+        ph_status: false,
+        minority_status: minority,
+        preferred_branches: selectedBranches,
+        preferred_districts: selectedDistricts,
+        max_fees: null,
+        gov_private_pref: govPref,
+        autonomous_pref: 'ANY',
+        hostel_required: false,
+        placement_priority: false,
+      };
+
+      let res: Response;
+      try {
+        res = await fetch(`${API_BASE_URL}/api/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } catch (firstErr) {
+        console.warn("First request failed (likely server cold start). Retrying in 2 seconds...", firstErr);
+        await new Promise(r => setTimeout(r, 2000));
+        res = await fetch(`${API_BASE_URL}/api/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
 
       let data: any = null;
       try {
