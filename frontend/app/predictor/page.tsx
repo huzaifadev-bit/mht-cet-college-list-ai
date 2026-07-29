@@ -9,6 +9,31 @@ import {
   Filter, X, BarChart2, Globe, ExternalLink, RefreshCw, Check
 } from 'lucide-react';
 
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem(key);
+      }
+    } catch (e) {}
+    return null;
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(key, value);
+      }
+    } catch (e) {}
+  },
+  removeItem: (key: string): void => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(key);
+      }
+    } catch (e) {}
+  }
+};
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface CollegeResult {
   college: {
@@ -213,7 +238,7 @@ function PredictorPage() {
   // Load saved preferences on mount to ensure button state syncs
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('cap_preferences');
+      const raw = safeLocalStorage.getItem('cap_preferences');
       if (raw) {
         const localPrefs = JSON.parse(raw);
         if (Array.isArray(localPrefs)) {
@@ -241,7 +266,7 @@ function PredictorPage() {
     setError('');
     setResults(null);
     try {
-      localStorage.setItem('cap_student_profile', JSON.stringify({
+      safeLocalStorage.setItem('cap_student_profile', JSON.stringify({
         percentile: pct,
         rank: rank ? parseInt(rank, 10) : null,
         category,
@@ -291,30 +316,33 @@ function PredictorPage() {
 
         // 🔄 Refresh existing saved items in cap_preferences with newly calculated admission_probability
         try {
-          const localPrefsRaw = localStorage.getItem('cap_preferences');
+          const localPrefsRaw = safeLocalStorage.getItem('cap_preferences');
           if (localPrefsRaw) {
             const localPrefs: any[] = JSON.parse(localPrefsRaw);
-            
-            const probMap = new Map<string, number>();
-            Object.values(data).flat().forEach((item: any) => {
-              const k = `${item.college?.code}_${item.branch?.code}`;
-              if (item.admission_probability !== undefined && item.admission_probability !== null) {
-                probMap.set(k, item.admission_probability);
+            if (Array.isArray(localPrefs)) {
+              const probMap = new Map<string, number>();
+              if (data && typeof data === 'object') {
+                Object.values(data).flat().forEach((item: any) => {
+                  const k = `${item?.college?.code}_${item?.branch?.code}`;
+                  if (item?.admission_probability !== undefined && item?.admission_probability !== null) {
+                    probMap.set(k, item.admission_probability);
+                  }
+                });
               }
-            });
 
-            let updatedAny = false;
-            localPrefs.forEach((p: any) => {
-              const k = `${p.college?.code}_${p.branch?.code}`;
-              if (probMap.has(k)) {
-                p.admission_probability = probMap.get(k);
-                updatedAny = true;
+              let updatedAny = false;
+              localPrefs.forEach((p: any) => {
+                const k = `${p?.college?.code}_${p?.branch?.code}`;
+                if (probMap.has(k)) {
+                  p.admission_probability = probMap.get(k);
+                  updatedAny = true;
+                }
+              });
+
+              if (updatedAny) {
+                safeLocalStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
+                if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
               }
-            });
-
-            if (updatedAny) {
-              localStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
-              window.dispatchEvent(new Event('storage'));
             }
           }
         } catch (e) {
@@ -346,7 +374,7 @@ function PredictorPage() {
     const key = `${colCode}_${brCode}`;
     
     try {
-      const raw = localStorage.getItem('cap_preferences');
+      const raw = safeLocalStorage.getItem('cap_preferences');
       const localPrefs: any[] = raw ? JSON.parse(raw) : [];
       if (Array.isArray(localPrefs)) {
         const exists = localPrefs.some(p => 
@@ -363,8 +391,8 @@ function PredictorPage() {
             locked: false,
             admission_probability: item.admission_probability ?? 50.0,
           });
-          localStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
-          window.dispatchEvent(new Event('storage'));
+          safeLocalStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
+          if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
         }
       }
       setSaved(prev => new Set([...prev, key]));
