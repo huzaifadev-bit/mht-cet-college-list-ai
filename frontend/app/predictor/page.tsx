@@ -191,6 +191,7 @@ export default function PredictorPage() {
   const [govPref, setGovPref]       = useState('ANY');
   const [minority, setMinority]     = useState('None');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [selectBranchVal, setSelectBranchVal] = useState('');
 
   // Results state
   const [results, setResults]       = useState<Record<string, CollegeResult[]> | null>(null);
@@ -578,41 +579,37 @@ export default function PredictorPage() {
               <select
                 className="sel-input"
                 style={{ width: 'auto', minWidth: '220px', padding: '6px 12px', fontSize: '0.82rem', borderRadius: '8px' }}
+                value={selectBranchVal}
                 onChange={(e) => {
-                  if (e.target.value && !selectedBranches.includes(e.target.value)) {
-                    setSelectedBranches(prev => [...prev, e.target.value]);
+                  const val = e.target.value;
+                  if (val && !selectedBranches.includes(val)) {
+                    setSelectedBranches(prev => [...prev, val]);
                   }
-                  e.target.value = '';
+                  setSelectBranchVal('');
                 }}
               >
                 <option value="">+ Search/Add from All 109 Branches...</option>
                 {FULL_BRANCH_LIST.map(b => (
-                  <option key={b} value={b}>{b}</option>
+                  <option key={`opt_${b}`} value={b}>{b}</option>
                 ))}
               </select>
             </div>
 
             <div className="chips-row">
-              {selectedBranches.map(b => (
-                <button
-                  key={`sel_${b}`}
-                  type="button"
-                  className="chip chip-active"
-                  onClick={() => toggleBranch(b)}
-                >
-                  <Check size={12} style={{ marginRight: 4 }} /> {b}
-                </button>
-              ))}
-              {ALL_POPULAR_BRANCHES.filter(b => !selectedBranches.includes(b)).map(b => (
-                <button
-                  key={`pop_${b}`}
-                  type="button"
-                  className="chip"
-                  onClick={() => toggleBranch(b)}
-                >
-                  {b}
-                </button>
-              ))}
+              {[...new Set([...ALL_POPULAR_BRANCHES, ...selectedBranches])].map(b => {
+                const isSelected = selectedBranches.includes(b);
+                return (
+                  <button
+                    key={`branch_chip_${b}`}
+                    type="button"
+                    className={`chip ${isSelected ? 'chip-active' : ''}`}
+                    onClick={() => toggleBranch(b)}
+                  >
+                    {isSelected && <Check size={12} style={{ marginRight: 4 }} />}
+                    {b}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
