@@ -6,11 +6,12 @@ import { API_BASE_URL } from '../config';
 import {
   Compass, Search, ChevronDown, ChevronUp, Plus, BookmarkCheck,
   MapPin, Award, TrendingUp, Shield, Star, Target, Zap,
-  Filter, X, BarChart2, Globe, ExternalLink, RefreshCw, Check
+  Filter, X, BarChart2, Globe, ExternalLink, RefreshCw
 } from 'lucide-react';
 
-const safeLocalStorage = {
-  getItem: (key: string): string | null => {
+// ─── Safe Local Storage Helper ───────────────────────────────────────────────
+const safeStorage = {
+  get: (key: string): string | null => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         return window.localStorage.getItem(key);
@@ -18,17 +19,10 @@ const safeLocalStorage = {
     } catch (e) {}
     return null;
   },
-  setItem: (key: string, value: string): void => {
+  set: (key: string, val: string): void => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(key, value);
-      }
-    } catch (e) {}
-  },
-  removeItem: (key: string): void => {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.removeItem(key);
+        window.localStorage.setItem(key, val);
       }
     } catch (e) {}
   }
@@ -39,29 +33,29 @@ interface CollegeResult {
   college: {
     code: number;
     name: string;
-    district: { name: string };
-    university: { name: string };
-    status: string;
-    autonomous: boolean;
-    minority_status: string | null;
-    fees: number | null;
-    hostel_availability: boolean;
-    average_package: number | null;
-    highest_package: number | null;
-    official_website: string | null;
+    district?: { name: string };
+    university?: { name: string };
+    status?: string;
+    autonomous?: boolean;
+    minority_status?: string | null;
+    fees?: number | null;
+    hostel_availability?: boolean;
+    average_package?: number | null;
+    highest_package?: number | null;
+    official_website?: string | null;
   };
   branch: { code: string; name: string };
   cap_round: number;
   seat_type: string;
   admission_probability: number;
-  category_closing_percentiles: Record<string, Array<{ round: number; percentile: number; rank: number }>>;
-  current_vacant_seats: number;
-  explanation: string;
+  category_closing_percentiles?: Record<string, Array<{ round: number; percentile: number; rank: number }>>;
+  current_vacant_seats?: number;
+  explanation?: string;
 }
 
 const CATEGORIES = ['OPEN', 'OBC', 'SC', 'ST', 'EWS', 'VJNT', 'NT1', 'NT2', 'NT3', 'SBC', 'TFWS', 'DEF'];
 
-const ALL_POPULAR_BRANCHES = [
+const POPULAR_BRANCHES = [
   'Computer Engineering',
   'Information Technology',
   'Computer Science and Engineering',
@@ -93,7 +87,7 @@ const ALL_POPULAR_BRANCHES = [
   'Textile Engineering / Technology',
 ];
 
-const FULL_BRANCH_LIST = [
+const ALL_109_BRANCHES = [
   "Aeronautical Engineering",
   "Agricultural Engineering",
   "Architectural Assistantship",
@@ -204,77 +198,69 @@ const BUCKET_META: Record<string, { color: string; bg: string; label: string; ic
   'Dream':           { color: '#ef4444', bg: 'rgba(239,68,68,0.12)',   label: '<40%',   icon: <Star size={16}/>, desc: 'Aspirational — add to top of your preference list' },
 };
 
-// ─── Main Component ──────────────────────────────────────────────────────────
-function PredictorPage() {
-  // Form state
+// ─── Main Predictor Component ────────────────────────────────────────────────
+export default function PredictorPage() {
   const [percentile, setPercentile] = useState('');
   const [rank, setRank]             = useState('');
   const [category, setCategory]     = useState('OPEN');
   const [gender, setGender]         = useState('M');
-  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+  const [selectedBranches, setSelectedBranches]   = useState<string[]>([]);
   const [selectedDistricts, setSelectedDistricts] = useState<string[]>([]);
   const [govPref, setGovPref]       = useState('ANY');
   const [minority, setMinority]     = useState('None');
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [selectBranchVal, setSelectBranchVal] = useState('');
 
-  // Results state
   const [results, setResults]       = useState<Record<string, CollegeResult[]> | null>(null);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState('');
   const [hasSearched, setHasSearched] = useState(false);
 
-  // Filter / sort on results
   const [searchQ, setSearchQ]       = useState('');
   const [filterDistrict, setFilterDistrict] = useState('ALL');
   const [filterBranch, setFilterBranch]     = useState('ALL');
   const [sortBy, setSortBy]         = useState('PROB_DESC');
 
-  // Accordions and Saved items
   const [expanded, setExpanded]     = useState<Set<string>>(new Set());
   const [saved, setSaved]           = useState<Set<string>>(new Set());
   const [activeBucket, setActiveBucket] = useState<string>('Safe');
 
-  // Load saved preferences on mount to ensure button state syncs
   useEffect(() => {
-    try {
-      const raw = safeLocalStorage.getItem('cap_preferences');
-      if (raw) {
-        const localPrefs = JSON.parse(raw);
-        if (Array.isArray(localPrefs)) {
-          const savedKeys = new Set<string>(
-            localPrefs
-              .filter((item: any) => item && item.college && item.branch)
-              .map((item: any) => `${item.college.code}_${item.branch.code}`)
-          );
-          setSaved(savedKeys);
+    const raw = safeStorage.get('cap_preferences');
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const keys = new Set<string>();
+          parsed.forEach((item: any) => {
+            if (item?.college?.code && item?.branch?.code) {
+              keys.add(`${item.college.code}_${item.branch.code}`);
+            }
+          });
+          setSaved(keys);
         }
-      }
-    } catch (e) {
-      console.error("Error loading local preferences", e);
+      } catch (e) {}
     }
   }, []);
 
-  // ─── Fetch Predictions ──────────────────────────────────────────────────
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!percentile) { setError('Please enter your percentile.'); return; }
+    if (!percentile) { setError('Please enter your MHT CET percentile.'); return; }
     const pct = parseFloat(percentile);
     if (isNaN(pct) || pct < 0 || pct > 100) { setError('Percentile must be between 0 and 100.'); return; }
 
     setLoading(true);
     setError('');
     setResults(null);
-    try {
-      safeLocalStorage.setItem('cap_student_profile', JSON.stringify({
-        percentile: pct,
-        rank: rank ? parseInt(rank, 10) : null,
-        category,
-        gender,
-        minority_status: minority,
-        home_university: ''
-      }));
-    } catch(e) {}
+    setHasSearched(true);
+
+    safeStorage.set('cap_student_profile', JSON.stringify({
+      percentile: pct,
+      rank: rank ? parseInt(rank, 10) : null,
+      category,
+      gender,
+      minority_status: minority,
+      home_university: ''
+    }));
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/predict`, {
@@ -300,35 +286,30 @@ function PredictorPage() {
           placement_priority: false,
         }),
       });
-      
-      let data;
+
+      let data: any = null;
       try {
         data = await res.json();
       } catch (jsonErr) {
-        throw new Error(`Failed to parse backend response: ${res.statusText}`);
+        throw new Error(`Failed to parse backend response.`);
       }
 
-      if (res.ok) {
+      if (res.ok && data && typeof data === 'object') {
         setResults(data);
-        // Auto-switch to first non-empty bucket
-        const firstFull = BUCKETS.find(b => (data[b] || []).length > 0);
+        const firstFull = BUCKETS.find(b => Array.isArray(data[b]) && data[b].length > 0);
         if (firstFull) setActiveBucket(firstFull);
 
-        // 🔄 Refresh existing saved items in cap_preferences with newly calculated admission_probability
-        try {
-          const localPrefsRaw = safeLocalStorage.getItem('cap_preferences');
-          if (localPrefsRaw) {
+        const localPrefsRaw = safeStorage.get('cap_preferences');
+        if (localPrefsRaw) {
+          try {
             const localPrefs: any[] = JSON.parse(localPrefsRaw);
             if (Array.isArray(localPrefs)) {
               const probMap = new Map<string, number>();
-              if (data && typeof data === 'object') {
-                Object.values(data).flat().forEach((item: any) => {
-                  const k = `${item?.college?.code}_${item?.branch?.code}`;
-                  if (item?.admission_probability !== undefined && item?.admission_probability !== null) {
-                    probMap.set(k, item.admission_probability);
-                  }
-                });
-              }
+              Object.values(data).flat().forEach((item: any) => {
+                if (item?.college?.code && item?.branch?.code && item?.admission_probability !== undefined) {
+                  probMap.set(`${item.college.code}_${item.branch.code}`, item.admission_probability);
+                }
+              });
 
               let updatedAny = false;
               localPrefs.forEach((p: any) => {
@@ -340,48 +321,52 @@ function PredictorPage() {
               });
 
               if (updatedAny) {
-                safeLocalStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
+                safeStorage.set('cap_preferences', JSON.stringify(localPrefs));
                 if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
               }
             }
-          }
-        } catch (e) {
-          console.error("Error refreshing saved preference probabilities", e);
+          } catch (e) {}
         }
       } else {
-        const errorMsg = data && data.detail 
-          ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) 
-          : 'Failed to load predictions';
+        const errorMsg = data && data.detail ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : 'Failed to fetch predictions.';
         throw new Error(errorMsg);
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Error fetching predictions. Make sure the backend is running.');
+      setError(err.message || 'Error fetching predictions.');
     } finally {
       setLoading(false);
     }
   };
 
-  // ─── Helpers ────────────────────────────────────────────────────────────
-  const toggleBranch  = (b: string) => setSelectedBranches(prev => prev.includes(b) ? prev.filter(x => x !== b) : [...prev, b]);
-  const toggleDistrict = (d: string) => setSelectedDistricts(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
-  const toggleExpand  = (id: string) => setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  const toggleBranch = (b: string) => {
+    setSelectedBranches(prev => prev.includes(b) ? prev.filter(x => x !== b) : [...prev, b]);
+  };
+
+  const toggleDistrict = (d: string) => {
+    setSelectedDistricts(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpanded(prev => {
+      const s = new Set(prev);
+      if (s.has(id)) s.delete(id);
+      else s.add(id);
+      return s;
+    });
+  };
 
   const addToPreferences = (item: CollegeResult) => {
-    if (!item || !item.college || !item.branch) return;
-    const colCode = item.college.code || 0;
-    const brCode = item.branch.code || '';
+    if (!item?.college?.code || !item?.branch?.code) return;
+    const colCode = item.college.code;
+    const brCode = item.branch.code;
     const key = `${colCode}_${brCode}`;
-    
+
     try {
-      const raw = safeLocalStorage.getItem('cap_preferences');
+      const raw = safeStorage.get('cap_preferences');
       const localPrefs: any[] = raw ? JSON.parse(raw) : [];
       if (Array.isArray(localPrefs)) {
-        const exists = localPrefs.some(p => 
-          p && p.college && p.branch && 
-          String(p.college.code) === String(colCode) && 
-          String(p.branch.code) === String(brCode)
-        );
+        const exists = localPrefs.some(p => p?.college?.code === colCode && p?.branch?.code === brCode);
         if (!exists) {
           localPrefs.push({
             id: `local_${Date.now()}_${key}`,
@@ -391,14 +376,12 @@ function PredictorPage() {
             locked: false,
             admission_probability: item.admission_probability ?? 50.0,
           });
-          safeLocalStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
+          safeStorage.set('cap_preferences', JSON.stringify(localPrefs));
           if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
         }
       }
       setSaved(prev => new Set([...prev, key]));
-    } catch (e) {
-      console.error("Failed to add preference", e);
-    }
+    } catch (e) {}
   };
 
   const processResults = (list: CollegeResult[]) => {
@@ -406,9 +389,9 @@ function PredictorPage() {
     let out = [...list];
     if (searchQ) {
       const q = searchQ.toLowerCase();
-      out = out.filter(i => 
-        (i.college?.name || '').toLowerCase().includes(q) || 
-        (i.branch?.name || '').toLowerCase().includes(q) || 
+      out = out.filter(i =>
+        (i.college?.name || '').toLowerCase().includes(q) ||
+        (i.branch?.name || '').toLowerCase().includes(q) ||
         String(i.college?.code || '').includes(q)
       );
     }
@@ -418,18 +401,16 @@ function PredictorPage() {
     if (filterBranch !== 'ALL') {
       out = out.filter(i => i.branch?.name === filterBranch);
     }
-    if (sortBy === 'PROB_DESC')   out.sort((a, b) => (b.admission_probability || 0) - (a.admission_probability || 0));
-    if (sortBy === 'PROB_ASC')    out.sort((a, b) => (a.admission_probability || 0) - (b.admission_probability || 0));
-    if (sortBy === 'FEES_ASC')    out.sort((a, b) => (a.college?.fees ?? 999999) - (b.college?.fees ?? 999999));
+    if (sortBy === 'PROB_DESC') out.sort((a, b) => (b.admission_probability || 0) - (a.admission_probability || 0));
+    if (sortBy === 'PROB_ASC')  out.sort((a, b) => (a.admission_probability || 0) - (b.admission_probability || 0));
+    if (sortBy === 'FEES_ASC')  out.sort((a, b) => (a.college?.fees ?? 999999) - (b.college?.fees ?? 999999));
     return out;
   };
 
-  // Extract unique districts and branches matching the results dynamically
   const allResultDistricts = (results && typeof results === 'object') ? [...new Set(Object.values(results).flat().map((i: any) => i?.college?.district?.name))].filter(Boolean).sort() as string[] : [];
   const allResultBranches  = (results && typeof results === 'object') ? [...new Set(Object.values(results).flat().map((i: any) => i?.branch?.name))].filter(Boolean).sort() as string[] : [];
   const totalResults       = (results && typeof results === 'object') ? Object.values(results).flat().length : 0;
 
-  // ─── Card ────────────────────────────────────────────────────────────────
   const renderCard = (item: CollegeResult, bucket: string) => {
     const colCode = item.college?.code || 0;
     const brCode = item.branch?.code || '';
@@ -442,7 +423,6 @@ function PredictorPage() {
 
     return (
       <div key={id} className="result-card">
-        {/* Top Row */}
         <div className="card-top">
           <div className="card-left">
             <div className="card-badges-row">
@@ -459,79 +439,35 @@ function PredictorPage() {
               {item.college?.hostel_availability && <span className="meta-item hostel">🏠 Hostel Available</span>}
             </div>
           </div>
-
           <div className="card-right">
             <div className="prob-circle" style={{ background: meta.bg, borderColor: meta.color }}>
               <span className="prob-num" style={{ color: meta.color }}>{item.admission_probability}%</span>
               <span className="prob-tag" style={{ color: meta.color }}>{bucket}</span>
             </div>
-            <button
-              className={`save-btn ${isSaved ? 'saved' : ''}`}
-              onClick={() => addToPreferences(item)}
-              disabled={isSaved}
-            >
-              {isSaved ? (
-                <><BookmarkCheck size={16}/> Added to List</>
-              ) : (
-                <><Plus size={16}/> Add Preference</>
-              )}
+            <button className={`save-btn ${isSaved ? 'saved' : ''}`} onClick={() => addToPreferences(item)} disabled={isSaved}>
+              {isSaved ? <><BookmarkCheck size={16}/> Added</> : <><Plus size={16}/> Add Preference</>}
             </button>
           </div>
         </div>
-
-        {/* Probability Bar */}
-        <div className="prob-bar-track">
-          <div className="prob-bar-fill" style={{ width: `${item.admission_probability}%`, background: meta.color }}/>
-        </div>
-
-        {/* Explanation */}
-        <p className="explanation-text">
-          <strong>AI Trend Analysis:</strong> {item.explanation}
-        </p>
-
-        {/* Accordion: Historical Cutoffs */}
+        <div className="prob-bar-track"><div className="prob-bar-fill" style={{ width: `${item.admission_probability}%`, background: meta.color }}/></div>
+        {item.explanation && (
+          <p className="explanation-text"><strong>AI Trend Analysis:</strong> {item.explanation}</p>
+        )}
         <button className="cutoff-toggle" onClick={() => toggleExpand(id)}>
           {isExpanded ? <><ChevronUp size={14}/> Hide Closing Cutoffs</> : <><ChevronDown size={14}/> View 3-Year CAP Cutoff Details</>}
         </button>
-
         {isExpanded && (
           <div className="cutoff-table-wrap">
             <table className="cutoff-table">
-              <thead>
-                <tr>
-                  <th>Academic Year</th>
-                  <th>CAP Round</th>
-                  <th>Seat Type</th>
-                  <th>Closing Percentile</th>
-                  <th>Closing Rank</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Year</th><th>Round</th><th>Type</th><th>Percentile</th><th>Rank</th></tr></thead>
               <tbody>
-                {Object.keys(closingCutoffs).length > 0 ? (
-                  Object.entries(closingCutoffs).map(([yr, entries]) =>
-                    (entries || []).map((e, idx) => (
-                      <tr key={`${yr}_${idx}`}>
-                        <td>{yr}</td>
-                        <td>Round {e.round}</td>
-                        <td>{item.seat_type}</td>
-                        <td className="cutoff-pct">{e.percentile}%</td>
-                        <td>#{e.rank}</td>
-                      </tr>
-                    ))
-                  )
-                ) : (
-                  <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
-                      Cutoff history available in general cutoff list.
-                    </td>
-                  </tr>
-                )}
+                {Object.entries(closingCutoffs).map(([yr, entries]) => (entries || []).map((e, idx) => (
+                  <tr key={`${yr}_${idx}`}><td>{yr}</td><td>R{e.round}</td><td>{item.seat_type}</td><td className="cutoff-pct">{e.percentile}%</td><td>#{e.rank}</td></tr>
+                )))}
               </tbody>
             </table>
             {item.college?.official_website && (
-              <a href={item.college.official_website} target="_blank" rel="noreferrer" className="website-link">
-                <Globe size={14}/> Visit College Website <ExternalLink size={12}/>
-              </a>
+              <a href={item.college.official_website} target="_blank" rel="noreferrer" className="website-link"><Globe size={14}/> Website <ExternalLink size={12}/></a>
             )}
           </div>
         )}
@@ -539,45 +475,29 @@ function PredictorPage() {
     );
   };
 
-  // ─── Render ──────────────────────────────────────────────────────────────
+  const displayBranchList = [...new Set([...POPULAR_BRANCHES, ...selectedBranches])];
+
   return (
-    <div className="pred-page animate-fade-in">
+    <div className="predictor-page main-container">
+      <div className="page-header text-center">
+        <div className="hero-badge"><Zap size={14} /> AI-Powered CAP Admission Predictor</div>
+        <h1 className="gradient-text">MHT CET College List Predictor</h1>
+        <p className="subtitle">Enter your MHT CET Percentile and Category to predict your college admission chances.</p>
+      </div>
 
-      {/* ── Hero Form ── */}
-      <div className="hero-section">
-        <div className="hero-text">
-          <h1><Compass size={32} className="hero-icon"/> MHT CET College Predictor</h1>
-          <p>Instantly estimate your admission possibilities and build your target preference list using official 3-year CAP round cutoffs.</p>
-        </div>
-
-        <form onSubmit={handleSearch} className="search-form glass-panel">
-          {/* Row 1: Percentile + Category + Gender + Type */}
-          <div className="form-row-main">
+      <div className="form-card glass-panel">
+        <form onSubmit={handleSearch}>
+          <div className="form-grid">
             <div className="form-field">
-              <label>MHT CET Percentile <span className="req">*</span></label>
-              <input
-                type="number"
-                min="0" max="100" step="0.0001"
-                placeholder="e.g. 94.65"
-                value={percentile}
-                onChange={e => setPercentile(e.target.value)}
-                className="text-input"
-                required
-              />
+              <label>MHT CET Percentile <span className="required">*</span></label>
+              <input type="number" step="0.0000001" min="0" max="100" placeholder="e.g. 94.52" value={percentile} onChange={e => setPercentile(e.target.value)} className="sel-input" required />
             </div>
             <div className="form-field">
-              <label>State General Rank <span className="hint-text">(Optional)</span></label>
-              <input
-                type="number"
-                min="1" max="300000"
-                placeholder="e.g. 15420"
-                value={rank}
-                onChange={e => setRank(e.target.value)}
-                className="text-input"
-              />
+              <label>State General Rank <span className="hint-text">(optional)</span></label>
+              <input type="number" placeholder="e.g. 12500" value={rank} onChange={e => setRank(e.target.value)} className="sel-input" />
             </div>
             <div className="form-field">
-              <label>Caste Category</label>
+              <label>Category</label>
               <select value={category} onChange={e => setCategory(e.target.value)} className="sel-input">
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -617,265 +537,126 @@ function PredictorPage() {
             </div>
           </div>
 
-          {/* Branches */}
-          <div className="chips-field">
+          <div className="chips-field" style={{ marginTop: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
-              <label>Preferred Branches <span className="hint-text">(select multiple — leave blank for all 109 branches)</span></label>
-              <select
-                className="sel-input"
-                style={{ width: 'auto', minWidth: '220px', padding: '6px 12px', fontSize: '0.82rem', borderRadius: '8px' }}
-                value={selectBranchVal}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val && !selectedBranches.includes(val)) {
-                    setSelectedBranches(prev => [...prev, val]);
-                  }
-                  setSelectBranchVal('');
-                }}
-              >
+              <label>Preferred Branches <span className="hint-text">(select multiple — leave blank for all)</span></label>
+              <select className="sel-input" style={{ width: 'auto', minWidth: '220px', padding: '6px 12px', fontSize: '0.82rem', borderRadius: '8px' }} value="" onChange={(e) => { if (e.target.value && !selectedBranches.includes(e.target.value)) setSelectedBranches(prev => [...prev, e.target.value]); }}>
                 <option value="">+ Search/Add from All 109 Branches...</option>
-                {FULL_BRANCH_LIST.map(b => (
-                  <option key={`opt_${b}`} value={b}>{b}</option>
-                ))}
+                {ALL_109_BRANCHES.map(b => <option key={`opt_${b}`} value={b}>{b}</option>)}
               </select>
             </div>
-
             <div className="chips-row">
-              {[...new Set([...ALL_POPULAR_BRANCHES, ...selectedBranches])].map(b => {
-                const isSelected = selectedBranches.includes(b);
-                return (
-                  <button
-                    key={`branch_chip_${b}`}
-                    type="button"
-                    className={`chip ${isSelected ? 'chip-active' : ''}`}
-                    onClick={() => toggleBranch(b)}
-                  >
-                    {isSelected && <span style={{ marginRight: '4px', fontWeight: 'bold' }}>✓</span>}
-                    {b}
-                  </button>
-                );
+              {displayBranchList.map(b => {
+                const active = selectedBranches.includes(b);
+                return <button key={`b_chip_${b}`} type="button" className={`chip ${active ? 'chip-active' : ''}`} onClick={() => toggleBranch(b)}>{active && <span style={{ marginRight: '5px', fontWeight: 'bold' }}>✓</span>}{b}</button>
               })}
             </div>
           </div>
 
-          {/* Advanced Toggle */}
-          <button type="button" className="adv-toggle" onClick={() => setShowAdvanced(!showAdvanced)}>
+          <button type="button" className="adv-toggle" onClick={() => setShowAdvanced(!showAdvanced)} style={{ marginTop: '16px' }}>
             <Filter size={16}/> {showAdvanced ? 'Hide' : 'Show'} District Preferences
           </button>
-
           {showAdvanced && (
             <div className="advanced-section">
               <div className="chips-field">
                 <label>Preferred Districts <span className="hint-text">(select multiple — leave blank for all Maharashtra)</span></label>
                 <div className="chips-row">
-                  {DISTRICTS.map(d => (
-                    <button key={`dist_chip_${d}`} type="button"
-                      className={`chip ${selectedDistricts.includes(d) ? 'chip-active' : ''}`}
-                      onClick={() => toggleDistrict(d)}
-                    >{d}</button>
-                  ))}
+                  {DISTRICTS.map(d => {
+                    const active = selectedDistricts.includes(d);
+                    return <button key={`d_chip_${d}`} type="button" className={`chip ${active ? 'chip-active' : ''}`} onClick={() => toggleDistrict(d)}>{active && <span style={{ marginRight: '5px', fontWeight: 'bold' }}>✓</span>}{d}</button>
+                  })}
                 </div>
               </div>
             </div>
           )}
-
-          {error && <p className="form-error">{error}</p>}
-
-          <button type="submit" className="predict-btn" disabled={loading}>
-            {loading ? (
-              <><RefreshCw size={18} className="spinner-ring" style={{ width: 16, height: 16, margin: 0 }}/> Analyzing Historic Records...</>
-            ) : (
-              <><Zap size={18}/> Predict My College List</>
-            )}
+          {error && <p className="form-error" style={{ marginTop: '12px' }}>{error}</p>}
+          <button type="submit" className="predict-btn" disabled={loading} style={{ marginTop: '20px' }}>
+            {loading ? <><RefreshCw size={18} className="spinner-ring" style={{ width: 16, height: 16, margin: 0 }}/> Analyzing Records...</> : <><Zap size={18}/> Predict My College List</>}
           </button>
         </form>
       </div>
 
-      {/* ── Results Section ── */}
-      {loading && (
-        <div className="loading-state">
-          <div className="spinner-ring"/>
-          <p>Scanning 35,000+ historical records across 379 engineering colleges... please wait.</p>
-        </div>
-      )}
-
-      {results && !loading && (
-        <div className="results-section">
-          {/* Summary Bar */}
-          <div className="summary-bar glass-panel">
-            <div className="summary-left">
-              <Compass size={20} className="summary-icon"/>
-              <span>Found <strong>{totalResults}</strong> matching choices for <strong>{percentile}%ile</strong> ({category} Category)</span>
+      {results && (
+        <div className="results-container">
+          <div className="results-summary glass-panel">
+            <div className="summary-info">
+              <h2>Prediction Results</h2>
+              <p>Found <strong>{totalResults}</strong> matching options across 4 probability tiers.</p>
             </div>
             <div className="bucket-tabs">
               {BUCKETS.map(b => {
-                const count = processResults(results[b] || []).length;
-                const meta  = BUCKET_META[b];
+                const count = (results[b] || []).length;
+                const meta = BUCKET_META[b];
+                const active = activeBucket === b;
                 return (
-                  <button
-                    key={b}
-                    className={`bucket-tab ${activeBucket === b ? 'tab-active' : ''}`}
-                    style={activeBucket === b ? { borderColor: meta.color, color: meta.color } : {}}
-                    onClick={() => setActiveBucket(b)}
-                  >
-                    <span className="tab-icon">{meta.icon}</span>
-                    <span>{b}</span>
-                    <span className="tab-count" style={{ background: meta.bg, color: meta.color }}>{count}</span>
+                  <button key={b} className={`bucket-tab ${active ? 'active' : ''}`} onClick={() => setActiveBucket(b)} style={{ borderColor: active ? meta.color : 'transparent', background: active ? meta.bg : 'rgba(255,255,255,0.03)' }}>
+                    <span className="tab-icon" style={{ color: meta.color }}>{meta.icon}</span>
+                    <span className="tab-name">{b}</span>
+                    <span className="tab-count" style={{ background: meta.color }}>{count}</span>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Filter Row */}
-          <div className="filter-bar glass-panel">
-            <div className="filter-search-wrap">
+          <div className="toolbar-panel glass-panel">
+            <div className="search-wrap">
               <Search size={16} className="fsearch-icon"/>
-              <input
-                type="text"
-                placeholder="Search college name, branch, code..."
-                className="filter-search"
-                value={searchQ}
-                onChange={e => setSearchQ(e.target.value)}
-              />
-              {searchQ && <button className="clear-btn" onClick={() => setSearchQ('')}><X size={16}/></button>}
+              <input type="text" placeholder="Search college name, choice code or branch..." value={searchQ} onChange={e => setSearchQ(e.target.value)} className="filter-search" />
+              {searchQ && <button className="clear-btn" onClick={() => setSearchQ('')}><X size={14}/></button>}
             </div>
-            <select className="filter-sel" value={filterDistrict} onChange={e => setFilterDistrict(e.target.value)}>
-              <option value="ALL">All Districts</option>
-              {allResultDistricts.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <select className="filter-sel" value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
-              <option value="ALL">All Branches</option>
-              {allResultBranches.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
-            <select className="filter-sel" value={sortBy} onChange={e => setSortBy(e.target.value)}>
-              <option value="PROB_DESC">Highest Probability</option>
-              <option value="PROB_ASC">Lowest Probability</option>
-              <option value="FEES_ASC">Lowest Annual Fees</option>
-            </select>
+            <div className="filters-group">
+              {allResultDistricts.length > 0 && (
+                <select value={filterDistrict} onChange={e => setFilterDistrict(e.target.value)} className="filter-sel">
+                  <option value="ALL">All Districts ({allResultDistricts.length})</option>
+                  {allResultDistricts.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              )}
+              {allResultBranches.length > 0 && (
+                <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)} className="filter-sel">
+                  <option value="ALL">All Branches ({allResultBranches.length})</option>
+                  {allResultBranches.map(br => <option key={br} value={br}>{br}</option>)}
+                </select>
+              )}
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="filter-sel">
+                <option value="PROB_DESC">Probability: High to Low</option>
+                <option value="PROB_ASC">Probability: Low to High</option>
+                <option value="FEES_ASC">Tuition Fees: Low to High</option>
+              </select>
+            </div>
           </div>
 
-          {/* Active Bucket Content */}
           {(() => {
-            const meta  = BUCKET_META[activeBucket];
-            const list  = processResults(results[activeBucket] || []);
+            const list = processResults(results[activeBucket] || []);
             return (
-              <div className="bucket-section">
-                <div className="bucket-heading" style={{ borderColor: meta.color }}>
-                  <span className="bh-icon" style={{ color: meta.color }}>{meta.icon}</span>
-                  <div>
-                    <h2 style={{ color: meta.color }}>{activeBucket} Target Colleges <span className="bh-range">({meta.label} Chance)</span></h2>
-                    <p className="bh-desc">{meta.desc}</p>
-                  </div>
-                  <span className="bh-count" style={{ background: meta.bg, color: meta.color }}>{list.length} Options</span>
+              <div className="bucket-content">
+                <div className="bucket-header">
+                  <h3>{activeBucket} Predictions ({list.length})</h3>
+                  <p className="bucket-desc">{BUCKET_META[activeBucket]?.desc}</p>
                 </div>
-
                 {list.length === 0 ? (
-                  <div className="empty-state">
-                    <p>No colleges found matching your search query or filters in this category.</p>
+                  <div className="empty-state glass-panel">
+                    <p>No colleges found matching your search filters in <strong>{activeBucket}</strong> tier.</p>
                     {(searchQ || filterDistrict !== 'ALL' || filterBranch !== 'ALL') && (
-                      <button className="clear-all-btn" onClick={() => { setSearchQ(''); setFilterDistrict('ALL'); setFilterBranch('ALL'); }}>
-                        Reset Filters
-                      </button>
+                      <button className="btn btn-secondary" onClick={() => { setSearchQ(''); setFilterDistrict('ALL'); setFilterBranch('ALL'); }} style={{ marginTop: '12px' }}>Reset Filters</button>
                     )}
                   </div>
                 ) : (
-                  <div className="cards-list">
-                    {list.map(item => renderCard(item, activeBucket))}
-                  </div>
+                  <div className="cards-list">{list.map(item => renderCard(item, activeBucket))}</div>
                 )}
               </div>
             );
           })()}
 
-          {/* Bottom CTA */}
-          <div className="bottom-cta glass-panel">
+          <div className="bottom-cta glass-panel" style={{ marginTop: '30px' }}>
             <div>
               <h3>Arrange your Target Preferences</h3>
               <p>Arranged your target choices? Head over to the Preference Builder to prioritize and export your option form list.</p>
             </div>
-            <Link href="/preference-builder" className="btn btn-primary">
-              Arrange Preference Order →
-            </Link>
+            <Link href="/preference-builder" className="btn btn-primary">Arrange Preference Order →</Link>
           </div>
         </div>
       )}
-
-      {/* Hint Cards on First Visit */}
-      {!hasSearched && !loading && (
-        <div className="first-visit-hint">
-          <div className="hint-cards-row">
-            {[
-              { icon: '📊', title: 'Cutoff Analytics', desc: 'Weighted trend predictions based on official 3-year CAP cutoff database' },
-              { icon: '🏛️', title: '379 Colleges', desc: 'Complete list of all registered government & private engineering colleges' },
-              { icon: '🎯', title: 'Reservation Aware', desc: 'Supports OPEN, OBC, SC, ST, EWS, TFWS & Defence categories' },
-              { icon: '💼', title: 'Placement Insights', desc: 'Access average packages, annual fee structures and hostel details' },
-            ].map(h => (
-              <div key={h.title} className="hint-card glass-panel">
-                <span className="hint-emoji">{h.icon}</span>
-                <h4>{h.title}</h4>
-                <p>{h.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
     </div>
-  );
-}
-
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: any }> {
-  constructor(props: any) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-  static getDerivedStateFromError(error: any) {
-    return { hasError: true, error };
-  }
-  componentDidCatch(error: any, errorInfo: any) {
-    console.error("Predictor Error Boundary caught:", error, errorInfo);
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ padding: '60px 20px', textAlign: 'center', color: '#fff', maxWidth: '600px', margin: '40px auto' }} className="glass-panel">
-          <h2 style={{ fontSize: '1.5rem', marginBottom: '12px' }}>Something went wrong loading predictions.</h2>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '0.9rem' }}>
-            {this.state.error?.message || 'A temporary local state issue occurred. Resetting saved preferences will resolve it immediately.'}
-          </p>
-          <button
-            onClick={() => {
-              try {
-                localStorage.removeItem('cap_preferences');
-                localStorage.removeItem('cap_student_profile');
-              } catch (e) {}
-              window.location.reload();
-            }}
-            style={{
-              padding: '12px 24px',
-              background: 'var(--accent-primary)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.95rem'
-            }}
-          >
-            Reset Saved Preferences & Reload Page
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-export default function SafePredictorPage() {
-  return (
-    <ErrorBoundary>
-      <PredictorPage />
-    </ErrorBoundary>
   );
 }
