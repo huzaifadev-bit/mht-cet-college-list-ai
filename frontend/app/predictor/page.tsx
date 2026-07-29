@@ -280,6 +280,38 @@ export default function PredictorPage() {
         // Auto-switch to first non-empty bucket
         const firstFull = BUCKETS.find(b => (data[b] || []).length > 0);
         if (firstFull) setActiveBucket(firstFull);
+
+        // 🔄 Refresh existing saved items in cap_preferences with newly calculated admission_probability
+        try {
+          const localPrefsRaw = localStorage.getItem('cap_preferences');
+          if (localPrefsRaw) {
+            const localPrefs: any[] = JSON.parse(localPrefsRaw);
+            
+            const probMap = new Map<string, number>();
+            Object.values(data).flat().forEach((item: any) => {
+              const k = `${item.college?.code}_${item.branch?.code}`;
+              if (item.admission_probability !== undefined && item.admission_probability !== null) {
+                probMap.set(k, item.admission_probability);
+              }
+            });
+
+            let updatedAny = false;
+            localPrefs.forEach((p: any) => {
+              const k = `${p.college?.code}_${p.branch?.code}`;
+              if (probMap.has(k)) {
+                p.admission_probability = probMap.get(k);
+                updatedAny = true;
+              }
+            });
+
+            if (updatedAny) {
+              localStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
+              window.dispatchEvent(new Event('storage'));
+            }
+          }
+        } catch (e) {
+          console.error("Error refreshing saved preference probabilities", e);
+        }
       } else {
         const errorMsg = data && data.detail 
           ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) 
