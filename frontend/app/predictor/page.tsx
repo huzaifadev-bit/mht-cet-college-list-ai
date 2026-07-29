@@ -6,7 +6,7 @@ import { API_BASE_URL } from '../config';
 import {
   Compass, Search, ChevronDown, ChevronUp, Plus, BookmarkCheck,
   MapPin, Award, TrendingUp, Shield, Star, Target, Zap,
-  Filter, X, BarChart2, Globe, ExternalLink, RefreshCw
+  Filter, X, BarChart2, Globe, ExternalLink, RefreshCw, Check
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
