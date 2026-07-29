@@ -180,7 +180,7 @@ const BUCKET_META: Record<string, { color: string; bg: string; label: string; ic
 };
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export default function PredictorPage() {
+function PredictorPage() {
   // Form state
   const [percentile, setPercentile] = useState('');
   const [rank, setRank]             = useState('');
@@ -213,11 +213,18 @@ export default function PredictorPage() {
   // Load saved preferences on mount to ensure button state syncs
   useEffect(() => {
     try {
-      const localPrefs = JSON.parse(localStorage.getItem('cap_preferences') || '[]');
-      const savedKeys = new Set<string>(
-        localPrefs.map((item: any) => `${item.college.code}_${item.branch.code}`)
-      );
-      setSaved(savedKeys);
+      const raw = localStorage.getItem('cap_preferences');
+      if (raw) {
+        const localPrefs = JSON.parse(raw);
+        if (Array.isArray(localPrefs)) {
+          const savedKeys = new Set<string>(
+            localPrefs
+              .filter((item: any) => item && item.college && item.branch)
+              .map((item: any) => `${item.college.code}_${item.branch.code}`)
+          );
+          setSaved(savedKeys);
+        }
+      }
     } catch (e) {
       console.error("Error loading local preferences", e);
     }
@@ -333,22 +340,32 @@ export default function PredictorPage() {
   const toggleExpand  = (id: string) => setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
   const addToPreferences = (item: CollegeResult) => {
-    const key = `${item.college.code}_${item.branch.code}`;
+    if (!item || !item.college || !item.branch) return;
+    const colCode = item.college.code || 0;
+    const brCode = item.branch.code || '';
+    const key = `${colCode}_${brCode}`;
     
     try {
-      const localPrefs: any[] = JSON.parse(localStorage.getItem('cap_preferences') || '[]');
-      const exists = localPrefs.some(p => String(p.college.code) === String(item.college.code) && String(p.branch.code) === String(item.branch.code));
-      if (!exists) {
-        localPrefs.push({
-          id: `local_${Date.now()}_${key}`,
-          college: item.college,
-          branch: item.branch,
-          preference_order: localPrefs.length + 1,
-          locked: false,
-          admission_probability: item.admission_probability,
-        });
-        localStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
-        window.dispatchEvent(new Event('storage'));
+      const raw = localStorage.getItem('cap_preferences');
+      const localPrefs: any[] = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(localPrefs)) {
+        const exists = localPrefs.some(p => 
+          p && p.college && p.branch && 
+          String(p.college.code) === String(colCode) && 
+          String(p.branch.code) === String(brCode)
+        );
+        if (!exists) {
+          localPrefs.push({
+            id: `local_${Date.now()}_${key}`,
+            college: item.college,
+            branch: item.branch,
+            preference_order: localPrefs.length + 1,
+            locked: false,
+            admission_probability: item.admission_probability ?? 50.0,
+          });
+          localStorage.setItem('cap_preferences', JSON.stringify(localPrefs));
+          window.dispatchEvent(new Event('storage'));
+        }
       }
       setSaved(prev => new Set([...prev, key]));
     } catch (e) {
@@ -380,9 +397,9 @@ export default function PredictorPage() {
   };
 
   // Extract unique districts and branches matching the results dynamically
-  const allResultDistricts = results ? [...new Set(Object.values(results).flat().map(i => i.college?.district?.name))].filter(Boolean).sort() : [];
-  const allResultBranches  = results ? [...new Set(Object.values(results).flat().map(i => i.branch?.name))].filter(Boolean).sort() : [];
-  const totalResults       = results ? Object.values(results).flat().length : 0;
+  const allResultDistricts = (results && typeof results === 'object') ? [...new Set(Object.values(results).flat().map((i: any) => i?.college?.district?.name))].filter(Boolean).sort() as string[] : [];
+  const allResultBranches  = (results && typeof results === 'object') ? [...new Set(Object.values(results).flat().map((i: any) => i?.branch?.name))].filter(Boolean).sort() as string[] : [];
+  const totalResults       = (results && typeof results === 'object') ? Object.values(results).flat().length : 0;
 
   // ─── Card ────────────────────────────────────────────────────────────────
   const renderCard = (item: CollegeResult, bucket: string) => {
@@ -777,5 +794,60 @@ export default function PredictorPage() {
       )}
 
     </div>
+  );
+}
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: any }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Predictor Error Boundary caught:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '60px 20px', textAlign: 'center', color: '#fff', maxWidth: '600px', margin: '40px auto' }} className="glass-panel">
+          <h2 style={{ fontSize: '1.5rem', marginBottom: '12px' }}>Something went wrong loading predictions.</h2>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '0.9rem' }}>
+            {this.state.error?.message || 'A temporary local state issue occurred. Resetting saved preferences will resolve it immediately.'}
+          </p>
+          <button
+            onClick={() => {
+              try {
+                localStorage.removeItem('cap_preferences');
+                localStorage.removeItem('cap_student_profile');
+              } catch (e) {}
+              window.location.reload();
+            }}
+            style={{
+              padding: '12px 24px',
+              background: 'var(--accent-primary)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '0.95rem'
+            }}
+          >
+            Reset Saved Preferences & Reload Page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function SafePredictorPage() {
+  return (
+    <ErrorBoundary>
+      <PredictorPage />
+    </ErrorBoundary>
   );
 }
