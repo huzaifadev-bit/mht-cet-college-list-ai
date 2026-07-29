@@ -74,6 +74,14 @@ export default function PreferenceBuilderPage() {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   const loadPreferences = () => {
+    // Re-sync student profile if changed on predictor page
+    const savedProf = localStorage.getItem('cap_student_profile');
+    if (savedProf) {
+      try {
+        setProfile(JSON.parse(savedProf));
+      } catch (e) {}
+    }
+
     const localPrefs = localStorage.getItem('cap_preferences');
     if (localPrefs) {
       try {
